@@ -129,8 +129,45 @@ def execute(task: dict) -> dict:
             encoding="utf-8",
             errors="replace",
         )
+        output = result.stdout.strip()[:3000] if result.stdout else ""
+
+        # 完了後に LINE WORKS ルームへ通知
+        requester_id = p.get("requester_id", "")
+        if requester_id and output:
+            room_map_path = Path(work_dir) / "lineworks-room-map.json"
+            room_name = None
+            if room_map_path.exists():
+                try:
+                    room_map = json.loads(room_map_path.read_text(encoding="utf-8"))
+                    room_name = room_map.get(requester_id)
+                except Exception:
+                    pass
+            if room_name:
+                tmp = Path(work_dir) / f"_lw_notify_{requester_id[:8]}.txt"
+                try:
+                    tmp.write_text(output, encoding="utf-8")
+                    lw_result = subprocess.run(
+                        ["python", str(Path(work_dir) / "lineworks_send.py"),
+                         room_name, str(tmp), "--headless"],
+                        timeout=120,
+                        cwd=work_dir,
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                    )
+                    out = lw_result.stdout.strip()[:500] if lw_result.stdout else ""
+                    if lw_result.returncode != 0:
+                        print(f"[{ts()}] LINE WORKS通知失敗 (exit={lw_result.returncode}): {out}")
+                    else:
+                        print(f"[{ts()}] LINE WORKS通知OK: {room_name}")
+                except Exception as e:
+                    print(f"[{ts()}] LINE WORKS通知失敗: {e}")
+                finally:
+                    tmp.unlink(missing_ok=True)
+
         return {
-            "output": result.stdout.strip()[:3000] if result.stdout else "",
+            "output": output,
             "error": result.stderr.strip()[:500] if result.stderr else "",
             "exit_code": result.returncode,
         }
@@ -169,7 +206,13 @@ def poll():
 
     task_id = task["id"]
     task_type = task["type"]
-    print(f"[{ts()}] タスク受信: {task_type} (id: {task_id[:8]}...)")
+    payload = task.get("payload", {})
+    if task_type == "claude_task":
+        sender = payload.get("requester_name", "不明")
+        preview = payload.get("prompt", "")[:40].replace("\n", " ")
+        print(f"[{ts()}] タスク受信: {task_type} [{sender}] 「{preview}...」 (id: {task_id[:8]}...)")
+    else:
+        print(f"[{ts()}] タスク受信: {task_type} (id: {task_id[:8]}...)")
 
     try:
         result = execute(task)
