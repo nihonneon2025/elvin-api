@@ -8,9 +8,13 @@ BrainTrust VPS Task Queue API
   PORT           リッスンポート（デフォルト: 5050）
 """
 
+import base64
+import hashlib
+import hmac as _hmac
 import json
 import os
 import sqlite3
+import urllib.request as _urlreq
 import uuid
 from datetime import datetime, timezone
 from functools import wraps
@@ -22,6 +26,8 @@ app = Flask(__name__)
 DB_PATH = os.path.join(os.path.dirname(__file__), "tasks.db")
 DAEMON_SECRET = os.environ.get("DAEMON_SECRET", "changeme")
 PORT = int(os.environ.get("PORT", 5050))
+LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
+LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 
 
 # ── DB ────────────────────────────────────────────────────────────────────
@@ -59,6 +65,28 @@ def init_db():
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
+
+
+def line_reply(reply_token: str, text: str):
+    if not LINE_CHANNEL_ACCESS_TOKEN or not reply_token:
+        return
+    body = json.dumps({
+        "replyToken": reply_token,
+        "messages": [{"type": "text", "text": text}]
+    }).encode()
+    req = _urlreq.Request(
+        "https://api.line.me/v2/bot/message/reply",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+        },
+        method="POST",
+    )
+    try:
+        _urlreq.urlopen(req, timeout=10)
+    except Exception as e:
+        print(f"[LINE] reply error: {e}")
 
 
 # ── 認証デコレータ ────────────────────────────────────────────────────────
@@ -194,8 +222,13 @@ def complete_task(task_id):
     data = request.get_json(force=True)
     success = data.get("success", True)
     status = "completed" if success else "failed"
+    task_row = None
 
     with get_db() as conn:
+        task_row = conn.execute(
+            "SELECT type, payload FROM tasks WHERE id = ? AND client_id = ?",
+            (task_id, client["id"]),
+        ).fetchone()
         conn.execute(
             "UPDATE tasks SET status = ?, result = ?, error = ?, completed_at = ?"
             " WHERE id = ? AND client_id = ?",
@@ -208,6 +241,12 @@ def complete_task(task_id):
                 client["id"],
             ),
         )
+
+    if success and task_row and task_row["type"] == "line_message":
+        payload = json.loads(task_row["payload"])
+        reply_text = data.get("result", {}).get("reply", "完了しました")
+        line_reply(payload.get("reply_token", ""), reply_text)
+
     return jsonify({"ok": True})
 
 
@@ -224,6 +263,43 @@ def heartbeat():
             "UPDATE clients SET last_seen = ? WHERE id = ?", (now_iso(), client["id"])
         )
     return jsonify({"ok": True, "client_id": client["id"]})
+
+
+# ── LINE Webhook ─────────────────────────────────────────────────────────
+
+@app.route("/webhook", methods=["POST"])
+def line_webhook():
+    body = request.get_data()
+    sig = request.headers.get("X-Line-Signature", "")
+
+    if LINE_CHANNEL_SECRET:
+        digest = _hmac.new(LINE_CHANNEL_SECRET.encode(), body, hashlib.sha256).digest()
+        if base64.b64encode(digest).decode() != sig:
+            return jsonify({"error": "invalid signature"}), 400
+
+    data = request.get_json(force=True)
+    for event in data.get("events", []):
+        if event.get("type") != "message":
+            continue
+        msg = event.get("message", {})
+        if msg.get("type") != "text":
+            continue
+        text = msg.get("text", "")
+        reply_token = event.get("replyToken", "")
+        with get_db() as conn:
+            client = conn.execute(
+                "SELECT id FROM clients ORDER BY created_at ASC LIMIT 1"
+            ).fetchone()
+            if client:
+                task_id = str(uuid.uuid4())
+                conn.execute(
+                    "INSERT INTO tasks (id, client_id, type, payload, status, created_at)"
+                    " VALUES (?, ?, ?, ?, 'pending', ?)",
+                    (task_id, client["id"], "line_message",
+                     json.dumps({"text": text, "reply_token": reply_token}),
+                     now_iso()),
+                )
+    return jsonify({"ok": True})
 
 
 # ── ステータス概要（管理者用） ────────────────────────────────────────────

@@ -114,6 +114,10 @@ def execute(task: dict) -> dict:
             "python": sys.version,
         }
 
+    elif t == "line_message":
+        text = p.get("text", "")
+        return {"reply": f"[AGO PC] 受信しました: {text}"}
+
     else:
         raise ValueError(f"未対応のタスクタイプ: {t!r}")
 
