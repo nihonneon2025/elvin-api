@@ -114,6 +114,27 @@ def execute(task: dict) -> dict:
             "python": sys.version,
         }
 
+    elif t == "claude_task":
+        prompt = p.get("prompt", "")
+        if not prompt:
+            return {"output": "", "error": "no prompt"}
+        cwd = r"C:\Users\Administrator\Desktop\AI版AGO"
+        work_dir = cwd if Path(cwd).exists() else str(Path.home())
+        result = subprocess.run(
+            ["claude", "--print", "--dangerously-skip-permissions", "-p", prompt],
+            capture_output=True,
+            text=True,
+            timeout=600,
+            cwd=work_dir,
+            encoding="utf-8",
+            errors="replace",
+        )
+        return {
+            "output": result.stdout.strip()[:3000] if result.stdout else "",
+            "error": result.stderr.strip()[:500] if result.stderr else "",
+            "exit_code": result.returncode,
+        }
+
     elif t == "line_message":
         text = p.get("text", "")
         return {"reply": f"[AGO PC] 受信しました: {text}"}
