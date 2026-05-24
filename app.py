@@ -350,7 +350,7 @@ def poll_task():
                 (now_iso(), agent_id, client["id"]),
             )
             task = conn.execute(
-                "SELECT * FROM tasks WHERE client_id = ? AND agent_id = ? AND status = 'pending'"
+                "SELECT * FROM tasks WHERE client_id = ? AND (agent_id = ? OR agent_id IS NULL) AND status = 'pending'"
                 " ORDER BY created_at ASC LIMIT 1",
                 (client["id"], agent_id),
             ).fetchone()
