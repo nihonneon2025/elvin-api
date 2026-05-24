@@ -381,6 +381,87 @@ def delegate_task():
     return jsonify({"task_id": task_id}), 201
 
 
+# ── クライアント側エージェント管理 ────────────────────────────────────────
+
+@app.route("/api/v1/manage/agents", methods=["GET"])
+def manage_list_agents():
+    token = client_token_from_request()
+    client = get_client_by_token(token) if token else None
+    if not client:
+        return jsonify({"error": "invalid token"}), 401
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, name, role, system_prompt, enabled FROM agents"
+            " WHERE client_id = ? ORDER BY created_at",
+            (client["id"],),
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/manage/agents", methods=["POST"])
+def manage_add_agent():
+    token = client_token_from_request()
+    client = get_client_by_token(token) if token else None
+    if not client:
+        return jsonify({"error": "invalid token"}), 401
+    data = request.get_json(force=True)
+    name = (data.get("name") or "").strip()
+    role = (data.get("role") or "").strip()
+    system_prompt = (data.get("system_prompt") or "").strip()
+    if not name or not system_prompt:
+        return jsonify({"error": "name and system_prompt are required"}), 400
+    agent_id = f"{client['id']}_{uuid.uuid4().hex[:8]}"
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO agents (id, client_id, name, role, system_prompt, enabled, created_at)"
+            " VALUES (?, ?, ?, ?, ?, 1, ?)",
+            (agent_id, client["id"], name, role, system_prompt, now_iso()),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO agent_tools (agent_id, tool) VALUES (?, ?)",
+            (agent_id, "claude_task"),
+        )
+    return jsonify({"agent_id": agent_id, "name": name}), 201
+
+
+@app.route("/api/v1/manage/agents/<agent_id>", methods=["PATCH"])
+def manage_update_agent(agent_id):
+    token = client_token_from_request()
+    client = get_client_by_token(token) if token else None
+    if not client:
+        return jsonify({"error": "invalid token"}), 401
+    data = request.get_json(force=True)
+    updates = {k: data[k] for k in ("name", "role", "system_prompt") if k in data}
+    if not updates:
+        return jsonify({"error": "nothing to update"}), 400
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [agent_id, client["id"]]
+    with get_db() as conn:
+        cur = conn.execute(
+            f"UPDATE agents SET {set_clause} WHERE id = ? AND client_id = ?",
+            values,
+        )
+        if cur.rowcount == 0:
+            return jsonify({"error": "agent not found"}), 404
+    return jsonify({"updated": True, "agent_id": agent_id})
+
+
+@app.route("/api/v1/manage/agents/<agent_id>", methods=["DELETE"])
+def manage_delete_agent(agent_id):
+    token = client_token_from_request()
+    client = get_client_by_token(token) if token else None
+    if not client:
+        return jsonify({"error": "invalid token"}), 401
+    with get_db() as conn:
+        cur = conn.execute(
+            "UPDATE agents SET enabled = 0 WHERE id = ? AND client_id = ?",
+            (agent_id, client["id"]),
+        )
+        if cur.rowcount == 0:
+            return jsonify({"error": "agent not found"}), 404
+    return jsonify({"deleted": True, "agent_id": agent_id})
+
+
 # ── タスクポーリング（ローカルエージェント → キュー） ─────────────────────
 
 @app.route("/api/v1/tasks/next", methods=["GET"])

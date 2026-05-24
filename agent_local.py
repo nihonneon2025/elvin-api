@@ -47,6 +47,79 @@ def ts():
     return datetime.now().strftime("%H:%M:%S")
 
 
+def reload_agents():
+    global AGENTS
+    try:
+        resp = requests.get(f"{VPS_URL}/api/v1/client/agents", headers=HEADERS, timeout=10)
+        if resp.status_code == 200:
+            AGENTS = resp.json()
+            print(f"[{ts()}] エージェント再読込: {len(AGENTS)}体")
+    except Exception as e:
+        print(f"[{ts()}] エージェント再読込失敗: {e}")
+
+
+def _find_agent_id(name: str) -> str:
+    for a in AGENTS:
+        if a.get("name", "").lower() == name.lower():
+            return a.get("agent_id", "")
+    return ""
+
+
+def handle_admin(cmd: str, requester_id: str, work_dir: str) -> str:
+    try:
+        data = json.loads(cmd)
+    except json.JSONDecodeError as e:
+        return f"JSON解析エラー: {e}"
+
+    action = data.get("action", "")
+    base = f"{VPS_URL}/api/v1/manage/agents"
+
+    if action == "list":
+        resp = requests.get(base, headers=HEADERS, timeout=10)
+        agents = resp.json() if resp.status_code == 200 else []
+        lines = [f"・{a['name']}（{a.get('role') or '役割未設定'}）[{a['id']}]" for a in agents]
+        return "現在のエージェント一覧:\n" + "\n".join(lines) if lines else "エージェントなし"
+
+    elif action == "add":
+        name = data.get("name", "")
+        sp = data.get("system_prompt", "")
+        if not name or not sp:
+            return "name と system_prompt が必要です"
+        resp = requests.post(
+            base, headers=HEADERS,
+            json={"name": name, "role": data.get("role", ""), "system_prompt": sp},
+            timeout=10,
+        )
+        if resp.status_code == 201:
+            r = resp.json()
+            reload_agents()
+            return f"エージェント「{r['name']}」を追加しました（ID: {r['agent_id']}）"
+        return f"追加失敗 ({resp.status_code}): {resp.text[:200]}"
+
+    elif action == "update":
+        aid = data.get("agent_id") or _find_agent_id(data.get("name", ""))
+        if not aid:
+            return "agent_id または name（既存エージェント名）が必要です"
+        update_fields = {k: data[k] for k in ("name", "role", "system_prompt") if k in data and k != "action"}
+        resp = requests.patch(f"{base}/{aid}", headers=HEADERS, json=update_fields, timeout=10)
+        if resp.status_code == 200:
+            reload_agents()
+            return f"エージェント（{aid}）を更新しました"
+        return f"更新失敗 ({resp.status_code}): {resp.text[:200]}"
+
+    elif action == "remove":
+        aid = data.get("agent_id") or _find_agent_id(data.get("name", ""))
+        if not aid:
+            return "agent_id または name（既存エージェント名）が必要です"
+        resp = requests.delete(f"{base}/{aid}", headers=HEADERS, timeout=10)
+        if resp.status_code == 200:
+            reload_agents()
+            return f"エージェント（{aid}）を削除しました"
+        return f"削除失敗 ({resp.status_code}): {resp.text[:200]}"
+
+    return f"不明なアクション: {action!r}"
+
+
 # ── タスク実行 ────────────────────────────────────────────────────────────
 
 def execute(task: dict, agent: dict) -> dict:
@@ -172,6 +245,40 @@ def execute(task: dict, agent: dict) -> dict:
                         print(f"[{ts()}] DISPATCH失敗: {e}")
                 else:
                     print(f"[{ts()}] DISPATCHターゲット不明: {target_name!r}")
+            return {
+                "output": output,
+                "error": result.stderr.strip()[:500] if result.stderr else "",
+                "exit_code": result.returncode,
+            }
+
+        # ADMIN: パターン検出 → エージェント管理
+        if output.startswith("ADMIN:"):
+            cmd_str = output[6:].strip()
+            result_msg = handle_admin(cmd_str, requester_id, work_dir)
+            print(f"[{ts()}] [{agent.get('name','URVAN')}] ADMIN: {result_msg[:80]}")
+            if requester_id:
+                room_map_path = Path(work_dir) / "lineworks-room-map.json"
+                room_name = None
+                if room_map_path.exists():
+                    try:
+                        room_map = json.loads(room_map_path.read_text(encoding="utf-8"))
+                        room_name = room_map.get(requester_id)
+                    except Exception:
+                        pass
+                if room_name:
+                    tmp = Path(work_dir) / f"_lw_admin_{requester_id[:8]}.txt"
+                    try:
+                        tmp.write_text(f"【管理】\n{result_msg}", encoding="utf-8")
+                        subprocess.run(
+                            ["python", str(Path(work_dir) / "lineworks_send.py"),
+                             room_name, str(tmp), "--headless"],
+                            timeout=60, cwd=work_dir, capture_output=True,
+                            encoding="utf-8", errors="replace",
+                        )
+                    except Exception as e:
+                        print(f"[{ts()}] ADMIN通知失敗: {e}")
+                    finally:
+                        tmp.unlink(missing_ok=True)
             return {
                 "output": output,
                 "error": result.stderr.strip()[:500] if result.stderr else "",
