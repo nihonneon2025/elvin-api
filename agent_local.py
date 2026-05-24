@@ -185,6 +185,30 @@ def execute(task: dict, agent: dict) -> dict:
             "exit_code": result.returncode,
         }
 
+    elif t == "lineworks_send":
+        room_name = p.get("room_name", "")
+        message = p.get("message", "")
+        if not room_name or not message:
+            raise ValueError("room_name と message が必要です")
+        work_dir = r"C:\Users\Administrator\Desktop\AI版AGO"
+        import uuid as _uuid
+        tmp = Path(work_dir) / f"_lw_send_{_uuid.uuid4().hex[:8]}.txt"
+        try:
+            tmp.write_text(message, encoding="utf-8")
+            result = subprocess.run(
+                ["python", str(Path(work_dir) / "lineworks_send.py"),
+                 room_name, str(tmp), "--headless"],
+                timeout=120, cwd=work_dir, capture_output=True,
+                text=True, encoding="utf-8", errors="replace",
+            )
+            success = result.returncode == 0
+            out = (result.stdout or "").strip()[:200]
+            if not success:
+                print(f"[{ts()}] lineworks_send 失敗 (exit={result.returncode}): {out}")
+            return {"sent": success, "room": room_name, "exit_code": result.returncode}
+        finally:
+            tmp.unlink(missing_ok=True)
+
     elif t == "line_message":
         text = p.get("text", "")
         agent_name = agent.get("name", "ELVIN")
