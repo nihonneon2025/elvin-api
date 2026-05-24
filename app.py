@@ -338,6 +338,38 @@ def push_task():
     return jsonify({"task_id": task_id}), 201
 
 
+@app.route("/api/v1/tasks/delegate", methods=["POST"])
+def delegate_task():
+    """ローカルエージェントが自クライアント内の別エージェントにタスクを委託する"""
+    token = client_token_from_request()
+    client = get_client_by_token(token) if token else None
+    if not client:
+        return jsonify({"error": "invalid token"}), 401
+
+    data = request.get_json(force=True)
+    agent_id = data.get("agent_id")
+    task_type = data.get("type")
+    if not agent_id or not task_type:
+        return jsonify({"error": "agent_id and type are required"}), 400
+
+    with get_db() as conn:
+        agent = conn.execute(
+            "SELECT id FROM agents WHERE id = ? AND client_id = ? AND enabled = 1",
+            (agent_id, client["id"]),
+        ).fetchone()
+        if not agent:
+            return jsonify({"error": "agent not found"}), 404
+
+        task_id = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO tasks (id, client_id, agent_id, type, payload, status, created_at)"
+            " VALUES (?, ?, ?, ?, ?, 'pending', ?)",
+            (task_id, client["id"], agent_id, task_type,
+             json.dumps(data.get("payload", {})), now_iso()),
+        )
+    return jsonify({"task_id": task_id}), 201
+
+
 # ── タスクポーリング（ローカルエージェント → キュー） ─────────────────────
 
 @app.route("/api/v1/tasks/next", methods=["GET"])

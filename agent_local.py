@@ -40,6 +40,7 @@ HEADERS = {"X-Client-Token": CLIENT_TOKEN}
 
 # 起動時に取得するエージェント一覧 [{agent_id, name, role, system_prompt, tools}, ...]
 AGENTS: list[dict] = []
+CLIENT_ID: str = ""
 
 
 def ts():
@@ -142,8 +143,42 @@ def execute(task: dict, agent: dict) -> dict:
         )
         output = result.stdout.strip()[:3000] if result.stdout else ""
 
-        # 完了後に LINE WORKS ルームへ通知
+        # DISPATCH: パターン検出 → 別エージェントに委託してリターン
         requester_id = p.get("requester_id", "")
+        if output.startswith("DISPATCH:"):
+            parts = output.split(":", 2)
+            if len(parts) >= 3:
+                target_name = parts[1].strip()
+                task_content = parts[2].strip()
+                target_agent = next((a for a in AGENTS if a["name"] == target_name), None)
+                if target_agent:
+                    try:
+                        requests.post(
+                            f"{VPS_URL}/api/v1/tasks/delegate",
+                            headers=HEADERS,
+                            json={
+                                "agent_id": target_agent["agent_id"],
+                                "type": "claude_task",
+                                "payload": {
+                                    "prompt": task_content,
+                                    "requester_id": requester_id,
+                                    "requester_name": p.get("requester_name", ""),
+                                },
+                            },
+                            timeout=10,
+                        )
+                        print(f"[{ts()}] [{agent.get('name','URVAN')}] DISPATCH → {target_name}")
+                    except Exception as e:
+                        print(f"[{ts()}] DISPATCH失敗: {e}")
+                else:
+                    print(f"[{ts()}] DISPATCHターゲット不明: {target_name!r}")
+            return {
+                "output": output,
+                "error": result.stderr.strip()[:500] if result.stderr else "",
+                "exit_code": result.returncode,
+            }
+
+        # 完了後に LINE WORKS ルームへ通知
         if requester_id and output:
             room_map_path = Path(work_dir) / "lineworks-room-map.json"
             room_name = None
@@ -155,8 +190,10 @@ def execute(task: dict, agent: dict) -> dict:
                     pass
             if room_name:
                 tmp = Path(work_dir) / f"_lw_notify_{requester_id[:8]}.txt"
-                agent_name = agent.get("name", "ELVIN")
-                notify_body = f"【{agent_name}】\n{output}"
+                dept = agent.get("role", "")
+                name = agent.get("name", "ELVIN")
+                label = f"{dept} {name}".strip() if dept else name
+                notify_body = f"【{label}】\n{output}"
                 try:
                     tmp.write_text(notify_body, encoding="utf-8")
                     lw_result = subprocess.run(
@@ -283,7 +320,7 @@ def poll_agent(agent: dict):
 # ── 起動・メインループ ────────────────────────────────────────────────────
 
 def main():
-    global AGENTS
+    global AGENTS, CLIENT_ID
 
     # ターミナルタイトルを変更（Claudeと知られないよう）
     if platform.system() == "Windows":
@@ -306,7 +343,8 @@ def main():
         )
         if resp.status_code == 200:
             data = resp.json()
-            print(f"[{ts()}] 接続OK: client_id={data.get('client_id')}")
+            CLIENT_ID = data.get("client_id", "")
+            print(f"[{ts()}] 接続OK: client_id={CLIENT_ID}")
         else:
             print(f"[{ts()}] ハートビート失敗: HTTP {resp.status_code}")
     except requests.RequestException as e:
