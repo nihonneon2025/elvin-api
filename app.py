@@ -420,7 +420,7 @@ def manage_add_agent():
         conn.execute(
             "INSERT OR IGNORE INTO agent_tools (id, agent_id, tool_name, config, enabled, created_at)"
             " VALUES (?, ?, ?, '{}', 1, ?)",
-            (str(uuid.uuid4()), agent_id, "claude_task", now_iso()),
+            (str(uuid.uuid4()), agent_id, "ELVIN_task", now_iso()),
         )
     return jsonify({"agent_id": agent_id, "name": name}), 201
 

@@ -191,29 +191,66 @@ def execute(task: dict, agent: dict) -> dict:
             "python": sys.version,
         }
 
-    elif t == "claude_task":
+    elif t == "ELVIN_task":
         prompt = p.get("prompt", "")
         if not prompt:
             return {"output": "", "error": "no prompt"}
 
-        # エージェントのsystem_promptをプロンプトに注入
-        system_prompt = agent.get("system_prompt", "")
-        if system_prompt:
-            full_prompt = f"{system_prompt}\n\n---\n\n{prompt}"
+        # ウルバン向け: 管理キーワード検出時は専用プロンプトに差し替え
+        _MGMT_KW = [
+            "AIを追加", "エージェントを追加", "担当AIを追加",
+            "AIを削除", "エージェントを削除", "担当AIを削除",
+            "AIを変更", "エージェントを変更", "AIのプロンプト",
+            "AI一覧", "エージェント一覧", "担当AI一覧",
+        ]
+        _is_dispatcher = ("DISPATCH:" in agent.get("system_prompt", "")
+                          or "振り分け" in agent.get("system_prompt", ""))
+        _prompt_stripped = prompt.replace("「", "").replace("」", "")
+        if _is_dispatcher and any(kw in _prompt_stripped for kw in _MGMT_KW):
+            full_prompt = (
+                "エージェント管理コマンドを1行だけ出力してください。説明不要。\n\n"
+                "形式:\n"
+                'ADMIN:{"action":"add","name":"AI名","role":"役割","system_prompt":"業務指示"}\n'
+                'ADMIN:{"action":"update","name":"既存AI名","system_prompt":"新業務指示"}\n'
+                'ADMIN:{"action":"remove","name":"AI名"}\n'
+                'ADMIN:{"action":"list"}\n\n'
+                f"指示: {prompt}"
+            )
         else:
-            full_prompt = prompt
+            system_prompt = agent.get("system_prompt", "")
+            if _is_dispatcher:
+                # 担当AI一覧を現在のAGENTSから動的生成（追加・削除に自動追従）
+                self_id = agent.get("agent_id", "")
+                others = [a for a in AGENTS if a.get("agent_id") != self_id]
+                agent_lines = "\n".join(
+                    f"- {a['name']}（{a.get('role') or '汎用'}）"
+                    for a in others
+                )
+                full_prompt = (
+                    f"{system_prompt}\n\n"
+                    f"【現在の担当AI一覧（最新）】以下のAIのみDISPATCH可能:\n{agent_lines}\n\n"
+                    f"---\n\n{prompt}"
+                )
+            elif system_prompt:
+                full_prompt = f"{system_prompt}\n\n---\n\n{prompt}"
+            else:
+                full_prompt = prompt
 
         cwd = r"C:\Users\Administrator\Desktop\AI版AGO"
         work_dir = cwd if Path(cwd).exists() else str(Path.home())
+        # ディスパッチャー(URVAN)はAI版AGOのCLAUDE.mdを読ませないためホームで実行
+        claude_cwd = str(Path.home()) if _is_dispatcher else work_dir
         result = subprocess.run(
             ["claude", "--print", "--dangerously-skip-permissions", "-p", full_prompt],
             capture_output=True,
             text=True,
             timeout=600,
-            cwd=work_dir,
+            cwd=claude_cwd,
             encoding="utf-8",
             errors="replace",
         )
+        if platform.system() == "Windows":
+            os.system("title ELVIN")
         output = result.stdout.strip()[:3000] if result.stdout else ""
 
         # DISPATCH: パターン検出 → 別エージェントに委託してリターン
@@ -231,7 +268,7 @@ def execute(task: dict, agent: dict) -> dict:
                             headers=HEADERS,
                             json={
                                 "agent_id": target_agent["agent_id"],
-                                "type": "claude_task",
+                                "type": "ELVIN_task",
                                 "payload": {
                                     "prompt": task_content,
                                     "requester_id": requester_id,
@@ -394,7 +431,7 @@ def poll_agent(agent: dict):
     task_type = task["type"]
     payload = task.get("payload", {})
 
-    if task_type == "claude_task":
+    if task_type == "ELVIN_task":
         sender = payload.get("requester_name", "不明")
         preview = payload.get("prompt", "")[:40].replace("\n", " ")
         print(f"[{ts()}] [{agent_name}] タスク受信: {task_type} [{sender}] 「{preview}...」")

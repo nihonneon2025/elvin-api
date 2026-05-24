@@ -93,7 +93,7 @@ for ag in agents:
     print(f"{ag['name']} 登録:", res)
 
 for aid in ["ago_001_juchu", "ago_001_zumen", "ago_001_sekisan", "ago_001_hacchu", "ago_001_keiri"]:
-    res = api("POST", f"/api/v1/agents/{aid}/tools", {"tool_name": "claude_task"})
+    res = api("POST", f"/api/v1/agents/{aid}/tools", {"tool_name": "ELVIN_task"})
     print(f"{aid} ツール:", res)
 
 print("完了")
