@@ -14,6 +14,7 @@ import hmac as _hmac
 import json
 import os
 import sqlite3
+import time
 import urllib.request as _urlreq
 import uuid
 from datetime import datetime, timezone
@@ -33,9 +34,17 @@ LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 # ── DB ────────────────────────────────────────────────────────────────────
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    for attempt in range(3):
+        try:
+            conn = sqlite3.connect(DB_PATH, timeout=20)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            return conn
+        except sqlite3.OperationalError:
+            if attempt == 2:
+                raise
+            time.sleep(0.5)
 
 
 def init_db():
