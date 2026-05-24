@@ -261,6 +261,12 @@ def poll_agent(agent: dict):
 def main():
     global AGENTS
 
+    # ターミナルタイトルを変更（Claudeと知られないよう）
+    if platform.system() == "Windows":
+        os.system("title ELVIN")
+    else:
+        print("\033]0;ELVIN\007", end="", flush=True)
+
     print("=" * 50)
     print("  ELVIN ローカルエージェント")
     print(f"  VPS: {VPS_URL}")
