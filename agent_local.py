@@ -1,16 +1,16 @@
 """
-BrainTrust ローカルエージェント
+ELVIN ローカルエージェント
 日本ネオン株式会社 - 顧客PC常駐スクリプト
 
 起動:
-  set BRAINTRUST_VPS_URL=https://your-vps.com
-  set BRAINTRUST_TOKEN=your_client_token
-  python agent.py
+  set ELVIN_VPS_URL=https://api.nihon-neon.jp
+  set ELVIN_TOKEN=your_client_token
+  python agent_local.py
 
 環境変数:
-  BRAINTRUST_VPS_URL   VPS APIのURL（デフォルト: http://localhost:5050）
-  BRAINTRUST_TOKEN     顧客トークン（必須）
-  POLL_INTERVAL        ポーリング間隔秒（デフォルト: 5）
+  ELVIN_VPS_URL    VPS APIのURL（デフォルト: http://localhost:5050）
+  ELVIN_TOKEN      顧客トークン（必須）
+  POLL_INTERVAL    ポーリング間隔秒（デフォルト: 5）
 """
 
 import base64
@@ -26,15 +26,20 @@ from pathlib import Path
 import requests
 
 # ── 設定 ──────────────────────────────────────────────────────────────────
-VPS_URL = os.environ.get("BRAINTRUST_VPS_URL", "http://localhost:5050").rstrip("/")
-CLIENT_TOKEN = os.environ.get("BRAINTRUST_TOKEN", "")
+VPS_URL = os.environ.get("ELVIN_VPS_URL",
+          os.environ.get("BRAINTRUST_VPS_URL", "http://localhost:5050")).rstrip("/")
+CLIENT_TOKEN = os.environ.get("ELVIN_TOKEN",
+               os.environ.get("BRAINTRUST_TOKEN", ""))
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "5"))
 
 if not CLIENT_TOKEN:
-    print("[ERROR] 環境変数 BRAINTRUST_TOKEN が設定されていません")
+    print("[ERROR] 環境変数 ELVIN_TOKEN が設定されていません")
     sys.exit(1)
 
 HEADERS = {"X-Client-Token": CLIENT_TOKEN}
+
+# 起動時に取得するエージェント一覧 [{agent_id, name, role, system_prompt, tools}, ...]
+AGENTS: list[dict] = []
 
 
 def ts():
@@ -43,7 +48,7 @@ def ts():
 
 # ── タスク実行 ────────────────────────────────────────────────────────────
 
-def execute(task: dict) -> dict:
+def execute(task: dict, agent: dict) -> dict:
     t = task["type"]
     p = task.get("payload", {})
 
@@ -78,18 +83,16 @@ def execute(task: dict) -> dict:
             import mss.tools
         except ImportError:
             raise RuntimeError("mss がインストールされていません: pip install mss")
-
         with mss.mss() as sct:
             monitor_index = p.get("monitor", 1)
             monitor = sct.monitors[monitor_index]
             img = sct.grab(monitor)
             png_bytes = mss.tools.to_png(img.rgb, img.size)
-
         b64 = base64.b64encode(png_bytes).decode()
         return {"image_base64": b64, "width": img.width, "height": img.height}
 
     elif t == "toast_notify":
-        title = p.get("title", "BrainTrust").replace('"', '')
+        title = p.get("title", agent.get("name", "ELVIN")).replace('"', '')
         message = p.get("message", "").replace('"', '')
         if platform.system() == "Windows":
             ps = (
@@ -100,7 +103,7 @@ def execute(task: dict) -> dict:
                 f'$x.GetElementsByTagName("text")[0].AppendChild($x.CreateTextNode("{title}"));'
                 f'$x.GetElementsByTagName("text")[1].AppendChild($x.CreateTextNode("{message}"));'
                 f'$n=[Windows.UI.Notifications.ToastNotification]::new($x);'
-                f'[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("BrainTrust").Show($n);'
+                f'[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("ELVIN").Show($n);'
             )
             subprocess.Popen(["powershell", "-Command", ps])
         return {"notified": True, "platform": platform.system()}
@@ -118,10 +121,18 @@ def execute(task: dict) -> dict:
         prompt = p.get("prompt", "")
         if not prompt:
             return {"output": "", "error": "no prompt"}
+
+        # エージェントのsystem_promptをプロンプトに注入
+        system_prompt = agent.get("system_prompt", "")
+        if system_prompt:
+            full_prompt = f"{system_prompt}\n\n---\n\n{prompt}"
+        else:
+            full_prompt = prompt
+
         cwd = r"C:\Users\Administrator\Desktop\AI版AGO"
         work_dir = cwd if Path(cwd).exists() else str(Path.home())
         result = subprocess.run(
-            ["claude", "--print", "--dangerously-skip-permissions", "-p", prompt],
+            ["claude", "--print", "--dangerously-skip-permissions", "-p", full_prompt],
             capture_output=True,
             text=True,
             timeout=600,
@@ -144,8 +155,10 @@ def execute(task: dict) -> dict:
                     pass
             if room_name:
                 tmp = Path(work_dir) / f"_lw_notify_{requester_id[:8]}.txt"
+                agent_name = agent.get("name", "ELVIN")
+                notify_body = f"【{agent_name}】\n{output}"
                 try:
-                    tmp.write_text(output, encoding="utf-8")
+                    tmp.write_text(notify_body, encoding="utf-8")
                     lw_result = subprocess.run(
                         ["python", str(Path(work_dir) / "lineworks_send.py"),
                          room_name, str(tmp), "--headless"],
@@ -174,30 +187,35 @@ def execute(task: dict) -> dict:
 
     elif t == "line_message":
         text = p.get("text", "")
-        return {"reply": f"[AGO PC] 受信しました: {text}"}
+        agent_name = agent.get("name", "ELVIN")
+        return {"reply": f"[{agent_name}] 受信しました: {text}"}
 
     else:
         raise ValueError(f"未対応のタスクタイプ: {t!r}")
 
 
-# ── ポーリングループ ───────────────────────────────────────────────────────
+# ── エージェント別ポーリング ──────────────────────────────────────────────
 
-def poll():
+def poll_agent(agent: dict):
+    agent_id = agent["agent_id"]
+    agent_name = agent["name"]
+
     try:
         resp = requests.get(
             f"{VPS_URL}/api/v1/tasks/next",
             headers=HEADERS,
+            params={"agent_id": agent_id},
             timeout=10,
         )
     except requests.RequestException as e:
-        print(f"[{ts()}] VPS接続エラー: {e}")
+        print(f"[{ts()}] [{agent_name}] VPS接続エラー: {e}")
         return
 
     if resp.status_code == 401:
         print(f"[{ts()}] 認証エラー: トークンを確認してください")
         return
     if resp.status_code != 200:
-        print(f"[{ts()}] ポーリング失敗: HTTP {resp.status_code}")
+        print(f"[{ts()}] [{agent_name}] ポーリング失敗: HTTP {resp.status_code}")
         return
 
     task = resp.json().get("task")
@@ -207,25 +225,26 @@ def poll():
     task_id = task["id"]
     task_type = task["type"]
     payload = task.get("payload", {})
+
     if task_type == "claude_task":
         sender = payload.get("requester_name", "不明")
         preview = payload.get("prompt", "")[:40].replace("\n", " ")
-        print(f"[{ts()}] タスク受信: {task_type} [{sender}] 「{preview}...」 (id: {task_id[:8]}...)")
+        print(f"[{ts()}] [{agent_name}] タスク受信: {task_type} [{sender}] 「{preview}...」")
     else:
-        print(f"[{ts()}] タスク受信: {task_type} (id: {task_id[:8]}...)")
+        print(f"[{ts()}] [{agent_name}] タスク受信: {task_type} (id: {task_id[:8]}...)")
 
     try:
-        result = execute(task)
+        result = execute(task, agent)
         requests.post(
             f"{VPS_URL}/api/v1/tasks/{task_id}/complete",
             headers=HEADERS,
             json={"success": True, "result": result},
             timeout=15,
         )
-        print(f"[{ts()}] 完了: {task_type}")
+        print(f"[{ts()}] [{agent_name}] 完了: {task_type}")
     except Exception as e:
         error_msg = str(e)
-        print(f"[{ts()}] 失敗: {task_type} — {error_msg}")
+        print(f"[{ts()}] [{agent_name}] 失敗: {task_type} — {error_msg}")
         try:
             requests.post(
                 f"{VPS_URL}/api/v1/tasks/{task_id}/complete",
@@ -237,14 +256,18 @@ def poll():
             pass
 
 
+# ── 起動・メインループ ────────────────────────────────────────────────────
+
 def main():
+    global AGENTS
+
     print("=" * 50)
-    print("  BrainTrust ローカルエージェント")
+    print("  ELVIN ローカルエージェント")
     print(f"  VPS: {VPS_URL}")
     print(f"  ポーリング間隔: {POLL_INTERVAL}秒")
     print("=" * 50)
 
-    # 初回ハートビートで接続確認
+    # 接続確認
     try:
         resp = requests.post(
             f"{VPS_URL}/api/v1/heartbeat",
@@ -258,28 +281,48 @@ def main():
             print(f"[{ts()}] ハートビート失敗: HTTP {resp.status_code}")
     except requests.RequestException as e:
         print(f"[{ts()}] VPSに接続できません: {e}")
-        print("         VPSが起動しているか、URLを確認してください")
 
-    # 有効ツール一覧を取得・表示
+    # エージェント一覧を取得
     try:
         resp = requests.get(
-            f"{VPS_URL}/api/v1/client/tools",
+            f"{VPS_URL}/api/v1/client/agents",
             headers=HEADERS,
             timeout=10,
         )
         if resp.status_code == 200:
-            tools = resp.json()
-            if tools:
-                names = ", ".join(t["tool"] for t in tools)
-                print(f"[{ts()}] 有効ツール: {names}")
+            AGENTS = resp.json()
+            if AGENTS:
+                print(f"[{ts()}] エージェント ({len(AGENTS)}体):")
+                for ag in AGENTS:
+                    tools = ", ".join(t["tool"] for t in ag.get("tools", [])) or "なし"
+                    role = ag.get("role") or "汎用"
+                    print(f"         ・{ag['name']} ({role}) — ツール: {tools}")
             else:
-                print(f"[{ts()}] 有効ツール: なし（未設定）")
-    except Exception:
-        pass
+                print(f"[{ts()}] エージェント未設定（VPSで登録してください）")
+        else:
+            print(f"[{ts()}] エージェント取得失敗: HTTP {resp.status_code}")
+    except Exception as e:
+        print(f"[{ts()}] エージェント取得エラー: {e}")
 
     print(f"[{ts()}] ポーリング開始...")
     while True:
-        poll()
+        if AGENTS:
+            for agent in AGENTS:
+                poll_agent(agent)
+        else:
+            # エージェント未設定の場合は定期的に再取得を試みる
+            try:
+                resp = requests.get(
+                    f"{VPS_URL}/api/v1/client/agents",
+                    headers=HEADERS,
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    AGENTS = resp.json()
+                    if AGENTS:
+                        print(f"[{ts()}] エージェントを検出: {len(AGENTS)}体")
+            except Exception:
+                pass
         time.sleep(POLL_INTERVAL)
 
 
