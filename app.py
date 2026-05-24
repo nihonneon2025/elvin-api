@@ -18,6 +18,7 @@ import time
 import urllib.request as _urlreq
 import uuid
 from datetime import datetime, timezone
+from contextlib import contextmanager
 from functools import wraps
 
 from flask import Flask, jsonify, request
@@ -33,18 +34,28 @@ LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 
 # ── DB ────────────────────────────────────────────────────────────────────
 
+@contextmanager
 def get_db():
+    conn = None
     for attempt in range(3):
         try:
             conn = sqlite3.connect(DB_PATH, timeout=20)
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
-            return conn
+            break
         except sqlite3.OperationalError:
             if attempt == 2:
                 raise
             time.sleep(0.5)
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def init_db():
