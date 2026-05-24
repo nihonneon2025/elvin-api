@@ -260,6 +260,23 @@ def main():
         print(f"[{ts()}] VPSに接続できません: {e}")
         print("         VPSが起動しているか、URLを確認してください")
 
+    # 有効ツール一覧を取得・表示
+    try:
+        resp = requests.get(
+            f"{VPS_URL}/api/v1/client/tools",
+            headers=HEADERS,
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            tools = resp.json()
+            if tools:
+                names = ", ".join(t["tool"] for t in tools)
+                print(f"[{ts()}] 有効ツール: {names}")
+            else:
+                print(f"[{ts()}] 有効ツール: なし（未設定）")
+    except Exception:
+        pass
+
     print(f"[{ts()}] ポーリング開始...")
     while True:
         poll()

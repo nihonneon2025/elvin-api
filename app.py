@@ -60,6 +60,16 @@ def init_db():
                 completed_at TEXT,
                 FOREIGN KEY (client_id) REFERENCES clients(id)
             );
+            CREATE TABLE IF NOT EXISTS client_tools (
+                id         TEXT PRIMARY KEY,
+                client_id  TEXT NOT NULL,
+                tool_name  TEXT NOT NULL,
+                config     TEXT DEFAULT '{}',
+                enabled    INTEGER DEFAULT 1,
+                created_at TEXT,
+                FOREIGN KEY (client_id) REFERENCES clients(id),
+                UNIQUE(client_id, tool_name)
+            );
         """)
 
 
@@ -247,6 +257,76 @@ def complete_task(task_id):
         reply_text = data.get("result", {}).get("reply", "完了しました")
         line_reply(payload.get("reply_token", ""), reply_text)
 
+    return jsonify({"ok": True})
+
+
+# ── ツール管理 ───────────────────────────────────────────────────────────
+
+@app.route("/api/v1/client/tools", methods=["GET"])
+def get_my_tools():
+    """agent_local.py が起動時に呼ぶ: 自分のクライアントの有効ツール一覧を返す"""
+    token = client_token_from_request()
+    client = get_client_by_token(token) if token else None
+    if not client:
+        return jsonify({"error": "invalid token"}), 401
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT tool_name, config FROM client_tools"
+            " WHERE client_id = ? AND enabled = 1 ORDER BY tool_name",
+            (client["id"],),
+        ).fetchall()
+    return jsonify([{"tool": r["tool_name"], "config": json.loads(r["config"])} for r in rows])
+
+
+@app.route("/api/v1/clients/<client_id>/tools", methods=["GET"])
+@require_daemon
+def list_client_tools(client_id):
+    """管理者: クライアントのツール一覧"""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT tool_name, config, enabled, created_at FROM client_tools"
+            " WHERE client_id = ? ORDER BY tool_name",
+            (client_id,),
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/clients/<client_id>/tools", methods=["POST"])
+@require_daemon
+def add_client_tool(client_id):
+    """管理者: ツールを追加"""
+    data = request.get_json(force=True)
+    tool_name = data.get("tool_name")
+    if not tool_name:
+        return jsonify({"error": "tool_name is required"}), 400
+    config = json.dumps(data.get("config", {}))
+    tool_id = str(uuid.uuid4())[:8]
+    with get_db() as conn:
+        try:
+            conn.execute(
+                "INSERT INTO client_tools (id, client_id, tool_name, config, enabled, created_at)"
+                " VALUES (?, ?, ?, ?, 1, ?)",
+                (tool_id, client_id, tool_name, config, now_iso()),
+            )
+        except sqlite3.IntegrityError:
+            conn.execute(
+                "UPDATE client_tools SET config = ?, enabled = 1"
+                " WHERE client_id = ? AND tool_name = ?",
+                (config, client_id, tool_name),
+            )
+    return jsonify({"ok": True, "tool_name": tool_name}), 201
+
+
+@app.route("/api/v1/clients/<client_id>/tools/<tool_name>", methods=["DELETE"])
+@require_daemon
+def remove_client_tool(client_id, tool_name):
+    """管理者: ツールを無効化"""
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE client_tools SET enabled = 0"
+            " WHERE client_id = ? AND tool_name = ?",
+            (client_id, tool_name),
+        )
     return jsonify({"ok": True})
 
 
