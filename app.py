@@ -31,6 +31,12 @@ PORT = int(os.environ.get("PORT", 5050))
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 
+# 概算料金レート（定期確認: https://www.anthropic.com/pricing）
+# Claude Sonnet: 入力 $3 / 出力 $15 per 1Mトークン
+_COST_INPUT_PER_1M = 3.0
+_COST_OUTPUT_PER_1M = 15.0
+_USD_TO_JPY = 155
+
 
 # ── DB ────────────────────────────────────────────────────────────────────
 
@@ -65,6 +71,7 @@ def init_db():
                 id         TEXT PRIMARY KEY,
                 token      TEXT UNIQUE NOT NULL,
                 name       TEXT,
+                status     TEXT DEFAULT 'active',
                 last_seen  TEXT,
                 created_at TEXT
             );
@@ -99,55 +106,28 @@ def init_db():
                 status       TEXT DEFAULT 'pending',
                 result       TEXT,
                 error        TEXT,
+                tokens_in    INTEGER DEFAULT 0,
+                tokens_out   INTEGER DEFAULT 0,
                 created_at   TEXT,
                 completed_at TEXT,
                 FOREIGN KEY (client_id) REFERENCES clients(id),
                 FOREIGN KEY (agent_id) REFERENCES agents(id)
             );
         """)
+        # 既存DBへのカラム追加（冪等）
+        for sql in [
+            "ALTER TABLE clients ADD COLUMN status TEXT DEFAULT 'active'",
+            "ALTER TABLE tasks ADD COLUMN tokens_in INTEGER DEFAULT 0",
+            "ALTER TABLE tasks ADD COLUMN tokens_out INTEGER DEFAULT 0",
+        ]:
+            try:
+                conn.execute(sql)
+            except Exception:
+                pass
 
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
-
-
-# ── セットアップ用デフォルトプロンプト ─────────────────────────────────────
-
-_SETUP_URVAN_PROMPT = """あなたは振り分け担当AIです。
-自分では絶対に回答・説明・作業をしてはいけません。
-返答は必ず以下のどちらかの形式1行のみです。それ以外の文字を出力してはいけません。
-
-【業務指示の場合】担当AIに振り分ける:
-DISPATCH:担当AI名:ユーザーの元メッセージをそのままコピー
-
-担当AI（名前は正確に）:
-- 総務部長AI: 新規案件受付・受注確定・スケジュール調整・外注手配・見積書作成・発注手配
-- デザイン部長AI: 設計・資材拾い出し・原価計算・見積書作成
-- 経理部長AI: 請求書作成・経費計算・収支管理
-
-DISPATCHの指示内容ルール（絶対厳守）:
-- ユーザーが送ったメッセージをそのままコピーするだけ
-- 自分で手順・補足・指示を追加してはいけない
-
-【AI管理の場合】エージェントの追加・変更・削除・一覧:
-ADMIN:{JSONのみ}
-
-自分では作業せず、必ずDISPATCH形式またはADMIN形式でのみ返答してください。"""
-
-_SETUP_SOUMU_PROMPT = """あなたは総務部長AIです。
-以下の業務を担当します：新規案件受付・受注確定・スケジュール調整・外注手配・見積書作成・発注手配。
-
-業務システムAPI情報・PDF送付ルール・完了報告ルールは管理画面から設定してください。"""
-
-_SETUP_KEIRI_PROMPT = """あなたは経理部長AIです。
-以下の業務を担当します：請求書作成・送付・経費計算・収支管理・書類整理。
-
-業務システムAPI情報・PDF送付ルール・完了報告ルールは管理画面から設定してください。"""
-
-_SETUP_DESIGN_PROMPT = """あなたはデザイン部長AIです。
-以下の業務を担当します：設計・内装設計・資材拾い出し・原価計算・積算見積書作成。
-
-業務システムAPI情報・PDF送付ルール・完了報告ルールは管理画面から設定してください。"""
 
 
 def line_reply(reply_token: str, text: str):
@@ -215,7 +195,7 @@ def create_client():
         if existing:
             return jsonify({"error": "client_id already exists"}), 409
         conn.execute(
-            "INSERT INTO clients (id, token, name, created_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO clients (id, token, name, status, created_at) VALUES (?, ?, ?, 'active', ?)",
             (client_id, token, data.get("name", client_id), now_iso()),
         )
     return jsonify({"client_id": client_id, "token": token}), 201
@@ -226,9 +206,53 @@ def create_client():
 def list_clients():
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, name, last_seen, created_at FROM clients ORDER BY created_at DESC"
+            "SELECT id, name, status, last_seen, created_at FROM clients ORDER BY created_at DESC"
         ).fetchall()
     return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/clients/<client_id>/status", methods=["PATCH"])
+@require_daemon
+def update_client_status(client_id):
+    """顧客の停止・再開"""
+    data = request.get_json(force=True)
+    new_status = data.get("status")
+    if new_status not in ("active", "suspended"):
+        return jsonify({"error": "status must be active or suspended"}), 400
+    with get_db() as conn:
+        cur = conn.execute(
+            "UPDATE clients SET status = ? WHERE id = ?", (new_status, client_id)
+        )
+        if cur.rowcount == 0:
+            return jsonify({"error": "client not found"}), 404
+    return jsonify({"ok": True, "client_id": client_id, "status": new_status})
+
+
+@app.route("/api/v1/clients/<client_id>/usage", methods=["GET"])
+@require_daemon
+def client_usage(client_id):
+    """顧客ごとのトークン使用量と概算費用"""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT SUM(tokens_in) as total_in, SUM(tokens_out) as total_out,"
+            " COUNT(*) as total_tasks,"
+            " SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as done_tasks"
+            " FROM tasks WHERE client_id = ?",
+            (client_id,)
+        ).fetchone()
+    total_in = row["total_in"] or 0
+    total_out = row["total_out"] or 0
+    cost_usd = (total_in * _COST_INPUT_PER_1M + total_out * _COST_OUTPUT_PER_1M) / 1_000_000
+    cost_jpy = int(cost_usd * _USD_TO_JPY)
+    return jsonify({
+        "client_id": client_id,
+        "tokens_in": total_in,
+        "tokens_out": total_out,
+        "total_tasks": row["total_tasks"] or 0,
+        "done_tasks": row["done_tasks"] or 0,
+        "cost_usd": round(cost_usd, 4),
+        "cost_jpy": cost_jpy,
+    })
 
 
 # ── エージェント管理 ──────────────────────────────────────────────────────
@@ -236,7 +260,6 @@ def list_clients():
 @app.route("/api/v1/clients/<client_id>/agents", methods=["POST"])
 @require_daemon
 def create_agent(client_id):
-    """部署・AIエージェントを作成"""
     data = request.get_json(force=True)
     name = data.get("name")
     if not name:
@@ -273,20 +296,32 @@ def create_agent(client_id):
 @app.route("/api/v1/clients/<client_id>/agents", methods=["GET"])
 @require_daemon
 def list_agents(client_id):
-    """クライアントの全エージェント一覧"""
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, name, role, line_group_id, enabled, last_seen, created_at"
+            "SELECT id, name, role, line_group_id, system_prompt, enabled, last_seen, created_at"
             " FROM agents WHERE client_id = ? ORDER BY created_at ASC",
             (client_id,),
         ).fetchall()
     return jsonify([dict(r) for r in rows])
 
 
+@app.route("/api/v1/agents/<agent_id>", methods=["GET"])
+@require_daemon
+def get_agent(agent_id):
+    """エージェント詳細（system_prompt含む）"""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, client_id, name, role, line_group_id, system_prompt, enabled, last_seen, created_at"
+            " FROM agents WHERE id = ?", (agent_id,)
+        ).fetchone()
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(dict(row))
+
+
 @app.route("/api/v1/agents/<agent_id>", methods=["PATCH"])
 @require_daemon
 def update_agent(agent_id):
-    """エージェント情報を更新（name/role/line_group_id/system_prompt/enabled）"""
     data = request.get_json(force=True)
     fields = {k: v for k, v in data.items()
               if k in ("name", "role", "line_group_id", "system_prompt", "enabled")}
@@ -390,7 +425,6 @@ def push_task():
 
 @app.route("/api/v1/tasks/delegate", methods=["POST"])
 def delegate_task():
-    """ローカルエージェントが自クライアント内の別エージェントにタスクを委託する"""
     token = client_token_from_request()
     client = get_client_by_token(token) if token else None
     if not client:
@@ -511,6 +545,10 @@ def poll_task():
     if not client:
         return jsonify({"error": "invalid token"}), 401
 
+    # 停止中の顧客はタスクを返さない
+    if (client["status"] or "active") == "suspended":
+        return jsonify({"task": None, "suspended": True})
+
     agent_id = request.args.get("agent_id")
 
     with get_db() as conn:
@@ -564,6 +602,8 @@ def complete_task(task_id):
     data = request.get_json(force=True)
     success = data.get("success", True)
     status = "completed" if success else "failed"
+    tokens_in = int(data.get("tokens_in", 0))
+    tokens_out = int(data.get("tokens_out", 0))
     task_row = None
 
     with get_db() as conn:
@@ -572,13 +612,16 @@ def complete_task(task_id):
             (task_id, client["id"]),
         ).fetchone()
         conn.execute(
-            "UPDATE tasks SET status = ?, result = ?, error = ?, completed_at = ?"
+            "UPDATE tasks SET status = ?, result = ?, error = ?, completed_at = ?,"
+            " tokens_in = ?, tokens_out = ?"
             " WHERE id = ? AND client_id = ?",
             (
                 status,
                 json.dumps(data.get("result", {})),
                 data.get("error", ""),
                 now_iso(),
+                tokens_in,
+                tokens_out,
                 task_id,
                 client["id"],
             ),
@@ -596,7 +639,6 @@ def complete_task(task_id):
 
 @app.route("/api/v1/client/agents", methods=["GET"])
 def get_my_agents():
-    """agent_local.py が起動時に呼ぶ: 自分のクライアントの全エージェント+ツールを返す"""
     token = client_token_from_request()
     client = get_client_by_token(token) if token else None
     if not client:
@@ -662,12 +704,37 @@ def line_webhook():
         msg = event.get("message", {})
         if msg.get("type") != "text":
             continue
-        text = msg.get("text", "")
+        text = msg.get("text", "").strip()
         reply_token = event.get("replyToken", "")
         group_id = event.get("source", {}).get("groupId", "")
 
+        # ELVIN管理コマンド: 「ELVIN登録:会社名」または「ELVIN登録:会社名:顧客ID」
+        if text.startswith("ELVIN登録:"):
+            parts = [p.strip() for p in text.split(":")]
+            new_name = parts[1] if len(parts) > 1 else ""
+            new_client_id = parts[2] if len(parts) > 2 and parts[2] else f"client_{uuid.uuid4().hex[:6]}"
+            if new_name:
+                new_token = str(uuid.uuid4()).replace("-", "")
+                with get_db() as conn:
+                    if conn.execute("SELECT id FROM clients WHERE id = ?", (new_client_id,)).fetchone():
+                        line_reply(reply_token, f"❌ 顧客ID「{new_client_id}」は既に存在します")
+                    else:
+                        conn.execute(
+                            "INSERT INTO clients (id, token, name, status, created_at) VALUES (?, ?, ?, 'active', ?)",
+                            (new_client_id, new_token, new_name, now_iso()),
+                        )
+                        line_reply(reply_token,
+                            f"✅ ELVIN登録完了\n"
+                            f"会社名: {new_name}\n"
+                            f"顧客ID: {new_client_id}\n"
+                            f"トークン: {new_token}\n"
+                            f"※ エージェントは管理画面から追加してください"
+                        )
+            else:
+                line_reply(reply_token, "❌ 会社名を入力してください\n例: ELVIN登録:株式会社ABC")
+            continue
+
         with get_db() as conn:
-            # LINEグループIDでエージェントを特定
             agent = None
             if group_id:
                 agent = conn.execute(
@@ -675,7 +742,6 @@ def line_webhook():
                     (group_id,),
                 ).fetchone()
 
-            # エージェントが見つからなければデフォルト（最初のクライアントの最初のエージェント）
             if not agent:
                 agent = conn.execute(
                     "SELECT id, client_id FROM agents WHERE enabled = 1"
@@ -706,7 +772,7 @@ def line_webhook():
 def status():
     with get_db() as conn:
         clients = conn.execute(
-            "SELECT id, name, last_seen FROM clients ORDER BY last_seen DESC"
+            "SELECT id, name, status, last_seen FROM clients ORDER BY last_seen DESC"
         ).fetchall()
         agents = conn.execute(
             "SELECT id, client_id, name, role, enabled, last_seen FROM agents ORDER BY client_id, created_at"
@@ -735,6 +801,7 @@ def status():
         {
             "id": c["id"],
             "name": c["name"],
+            "status": c["status"] or "active",
             "last_seen": c["last_seen"],
             "agents": agent_map.get(c["id"], []),
         }
@@ -749,7 +816,7 @@ def admin_page():
     return send_file(os.path.join(os.path.dirname(__file__), "admin.html"))
 
 
-# ── 初回セットアップ（顧客+デフォルトエージェント一括作成） ───────────────
+# ── 初回セットアップ（顧客+エージェント一括作成） ─────────────────────────
 
 @app.route("/api/v1/setup/client", methods=["POST"])
 @require_daemon
@@ -759,40 +826,44 @@ def setup_client():
     if not name:
         return jsonify({"error": "name is required"}), 400
 
-    client_id = (data.get("client_id") or "").strip() or f"client_{str(uuid.uuid4())[:6]}"
-    line_group_id = (data.get("line_group_id") or "").strip()
+    client_id = (data.get("client_id") or "").strip() or f"client_{uuid.uuid4().hex[:6]}"
     token = str(uuid.uuid4()).replace("-", "")
 
-    default_agents = [
-        {"name": "URVAN",       "role": "振り分け担当",   "line_group_id": line_group_id, "system_prompt": _SETUP_URVAN_PROMPT},
-        {"name": "総務部長AI",  "role": "総務・案件管理", "line_group_id": "",            "system_prompt": _SETUP_SOUMU_PROMPT},
-        {"name": "経理部長AI",  "role": "経理・請求書管理","line_group_id": "",           "system_prompt": _SETUP_KEIRI_PROMPT},
-        {"name": "デザイン部長AI","role": "設計・見積・積算","line_group_id": "",          "system_prompt": _SETUP_DESIGN_PROMPT},
-    ]
+    # エージェントは自由指定（名前・役割・プロンプトを任意に設定）
+    agents_input = data.get("agents", [])
 
     with get_db() as conn:
         if conn.execute("SELECT id FROM clients WHERE id = ?", (client_id,)).fetchone():
             return jsonify({"error": "client_id already exists"}), 409
 
         conn.execute(
-            "INSERT INTO clients (id, token, name, created_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO clients (id, token, name, status, created_at) VALUES (?, ?, ?, 'active', ?)",
             (client_id, token, name, now_iso()),
         )
 
         created = []
-        for ag in default_agents:
+        for ag in agents_input:
+            agent_name = (ag.get("name") or "").strip()
+            if not agent_name:
+                continue
             agent_id = f"{client_id}_{uuid.uuid4().hex[:6]}"
             conn.execute(
                 "INSERT INTO agents (id, client_id, name, role, line_group_id, system_prompt, created_at)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (agent_id, client_id, ag["name"], ag["role"], ag["line_group_id"], ag["system_prompt"], now_iso()),
+                (
+                    agent_id, client_id, agent_name,
+                    ag.get("role", ""),
+                    ag.get("line_group_id", ""),
+                    ag.get("system_prompt", ""),
+                    now_iso(),
+                ),
             )
             conn.execute(
                 "INSERT INTO agent_tools (id, agent_id, tool_name, config, enabled, created_at)"
                 " VALUES (?, ?, 'ELVIN_task', '{}', 1, ?)",
                 (str(uuid.uuid4()), agent_id, now_iso()),
             )
-            created.append({"agent_id": agent_id, "name": ag["name"], "role": ag["role"]})
+            created.append({"agent_id": agent_id, "name": agent_name, "role": ag.get("role", "")})
 
     return jsonify({"client_id": client_id, "token": token, "agents": created}), 201
 
@@ -809,7 +880,8 @@ def recent_tasks():
         if client_id:
             rows = conn.execute(
                 "SELECT t.id, t.client_id, t.agent_id, a.name AS agent_name,"
-                " t.type, t.status, t.error, t.result, t.created_at, t.completed_at"
+                " t.type, t.status, t.error, t.result, t.tokens_in, t.tokens_out,"
+                " t.created_at, t.completed_at"
                 " FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id"
                 " WHERE t.client_id = ? ORDER BY t.created_at DESC LIMIT ?",
                 (client_id, limit),
@@ -817,7 +889,8 @@ def recent_tasks():
         else:
             rows = conn.execute(
                 "SELECT t.id, t.client_id, t.agent_id, a.name AS agent_name,"
-                " t.type, t.status, t.error, t.result, t.created_at, t.completed_at"
+                " t.type, t.status, t.error, t.result, t.tokens_in, t.tokens_out,"
+                " t.created_at, t.completed_at"
                 " FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id"
                 " ORDER BY t.created_at DESC LIMIT ?",
                 (limit,),
