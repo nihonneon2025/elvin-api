@@ -263,6 +263,41 @@ def client_usage(client_id):
     })
 
 
+@app.route("/api/v1/usage/all", methods=["GET"])
+@require_daemon
+def all_usage():
+    """全顧客のトークン使用量・費用を一括返却"""
+    with get_db() as conn:
+        clients = conn.execute(
+            "SELECT id, name FROM clients ORDER BY name"
+        ).fetchall()
+        rows = conn.execute(
+            "SELECT client_id,"
+            " SUM(tokens_in) as total_in, SUM(tokens_out) as total_out,"
+            " COUNT(*) as total_tasks,"
+            " SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as done_tasks"
+            " FROM tasks GROUP BY client_id"
+        ).fetchall()
+    usage_map = {r["client_id"]: dict(r) for r in rows}
+    result = []
+    for c in clients:
+        u = usage_map.get(c["id"], {"total_in": 0, "total_out": 0, "total_tasks": 0, "done_tasks": 0})
+        t_in = u["total_in"] or 0
+        t_out = u["total_out"] or 0
+        cost_usd = (t_in * _COST_INPUT_PER_1M + t_out * _COST_OUTPUT_PER_1M) / 1_000_000
+        result.append({
+            "client_id": c["id"],
+            "client_name": c["name"],
+            "tokens_in": t_in,
+            "tokens_out": t_out,
+            "total_tasks": u["total_tasks"] or 0,
+            "done_tasks": u["done_tasks"] or 0,
+            "cost_usd": round(cost_usd, 4),
+            "cost_jpy": int(cost_usd * _USD_TO_JPY),
+        })
+    return jsonify(result)
+
+
 # ── エージェント管理 ──────────────────────────────────────────────────────
 
 @app.route("/api/v1/clients/<client_id>/agents", methods=["POST"])

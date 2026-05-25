@@ -286,6 +286,10 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
         トークングラフ
       </div>
+      <div class="nav-item" onclick="showTab('billing',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+        利用トークン料金
+      </div>
     </nav>
     <div class="sidebar-footer">
       <div>管理キー認証済み</div>
@@ -455,6 +459,39 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
         </div>
       </div>
     </div>
+    <!-- ── Billing ── -->
+    <div id="tab-billing" style="display:none">
+      <div class="page-header">
+        <div class="page-title">利用トークン料金</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadBilling()">更新</button>
+      </div>
+      <div class="card" style="margin-bottom:16px;padding:14px 20px;display:flex;gap:24px;align-items:center;flex-wrap:wrap">
+        <div><div style="font-size:11px;color:#64748b;margin-bottom:4px">全顧客合計（累計）</div>
+          <div style="font-size:20px;font-weight:700;color:#f59e0b" id="billing-total-jpy">—</div></div>
+        <div><div style="font-size:11px;color:#64748b;margin-bottom:4px">入力トークン計</div>
+          <div style="font-size:16px;font-weight:600;color:#60a5fa" id="billing-total-in">—</div></div>
+        <div><div style="font-size:11px;color:#64748b;margin-bottom:4px">出力トークン計</div>
+          <div style="font-size:16px;font-weight:600;color:#a78bfa" id="billing-total-out">—</div></div>
+        <div style="margin-left:auto;font-size:11px;color:#475569;line-height:1.6">
+          ※ Claude Sonnet 概算（入力$3/出力$15 per 100万トークン・1USD=155円）<br>
+          ※ 実際の料金は <a href="https://console.anthropic.com" target="_blank" style="color:#3b82f6">Anthropicコンソール</a> で確認してください
+        </div>
+      </div>
+      <div class="card" style="padding:0">
+        <table>
+          <thead><tr>
+            <th>会社名</th><th>顧客ID</th>
+            <th style="text-align:right">入力トークン</th>
+            <th style="text-align:right">出力トークン</th>
+            <th style="text-align:right">タスク数</th>
+            <th style="text-align:right">推定費用（円）</th>
+          </tr></thead>
+          <tbody id="billing-body">
+            <tr><td colspan="6" class="empty-state">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </main>
 </div>
 
@@ -545,6 +582,7 @@ function showTab(name, el) {
   if (name === 'tasks') loadTasks();
   if (name === 'logs') { populateLogClientFilter(); loadLogs(); startLogAutoRefresh(); }
   if (name === 'chart') { populateChartClientFilter(); loadChart(); }
+  if (name === 'billing') loadBilling();
 }
 
 
@@ -1175,6 +1213,40 @@ function renderChartFromCache() {
       }
     }
   });
+}
+
+// ── Billing Tab ───────────────────────────────────
+async function loadBilling() {
+  try {
+    const rows = await api('GET', '/api/v1/usage/all');
+    const tbody = document.getElementById('billing-body');
+
+    let totalJpy = 0, totalIn = 0, totalOut = 0;
+    rows.forEach(r => { totalJpy += r.cost_jpy; totalIn += r.tokens_in; totalOut += r.tokens_out; });
+
+    document.getElementById('billing-total-jpy').textContent = `¥${totalJpy.toLocaleString()}`;
+    document.getElementById('billing-total-in').textContent = totalIn.toLocaleString();
+    document.getElementById('billing-total-out').textContent = totalOut.toLocaleString();
+
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">データなし</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td><strong>${esc(r.client_name)}</strong></td>
+        <td class="cell-mono cell-muted">${esc(r.client_id)}</td>
+        <td style="text-align:right;color:#60a5fa">${r.tokens_in.toLocaleString()}</td>
+        <td style="text-align:right;color:#a78bfa">${r.tokens_out.toLocaleString()}</td>
+        <td style="text-align:right">${r.done_tasks} / ${r.total_tasks}</td>
+        <td style="text-align:right;font-weight:600;color:${r.cost_jpy > 0 ? '#f59e0b' : '#475569'}">
+          ¥${r.cost_jpy.toLocaleString()}
+        </td>
+      </tr>`).join('');
+  } catch(e) {
+    document.getElementById('billing-body').innerHTML =
+      `<tr><td colspan="6" class="empty-state" style="color:#ef4444">${esc(e.message)}</td></tr>`;
+  }
 }
 
 // ── Init ──────────────────────────────────────────
