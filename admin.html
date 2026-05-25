@@ -108,6 +108,22 @@ tr:hover td{background:#172035}
 .badge-gray{background:#1e293b;color:#64748b;border:1px solid #334155}
 .badge-orange{background:#431407;color:#fb923c}
 
+/* ── Confirm Modal ───────────────────────────── */
+#confirm-overlay{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);
+  z-index:200;align-items:center;justify-content:center
+}
+#confirm-overlay.show{display:flex}
+.confirm-box{
+  background:#1e293b;border:1px solid #ef4444;border-radius:14px;
+  padding:32px 28px;max-width:380px;width:90%;text-align:center
+}
+.confirm-icon{font-size:36px;margin-bottom:12px}
+.confirm-title{font-size:16px;font-weight:700;color:#f87171;margin-bottom:8px}
+.confirm-msg{font-size:13px;color:#94a3b8;line-height:1.6;margin-bottom:24px}
+.confirm-actions{display:flex;gap:10px;justify-content:center}
+.confirm-actions .btn{min-width:100px}
+
 /* ── Agent Card ──────────────────────────────── */
 .agent-list{display:flex;flex-direction:column;gap:12px;padding:16px}
 .agent-card{background:#172035;border:1px solid #334155;border-radius:10px;padding:14px 16px}
@@ -359,6 +375,18 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
   </div>
 </div>
 
+<div id="confirm-overlay">
+  <div class="confirm-box">
+    <div class="confirm-icon" id="confirm-icon">⚠️</div>
+    <div class="confirm-title" id="confirm-title"></div>
+    <div class="confirm-msg" id="confirm-msg"></div>
+    <div class="confirm-actions">
+      <button class="btn btn-ghost" id="confirm-cancel">キャンセル</button>
+      <button class="btn btn-danger" id="confirm-ok"></button>
+    </div>
+  </div>
+</div>
+
 <script>
 const BASE = '';
 let SECRET = '';
@@ -552,18 +580,44 @@ function fmtTaskBadges(tasks) {
 }
 
 // ── Client Status Toggle ──────────────────────────
+function showConfirm({icon, title, msg, okLabel, okClass, onOk}) {
+  const overlay = document.getElementById('confirm-overlay');
+  document.getElementById('confirm-icon').textContent = icon || '⚠️';
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-msg').textContent = msg;
+  const okBtn = document.getElementById('confirm-ok');
+  okBtn.textContent = okLabel || '実行';
+  okBtn.className = 'btn ' + (okClass || 'btn-danger');
+  const cancelBtn = document.getElementById('confirm-cancel');
+  const close = () => { overlay.classList.remove('show'); };
+  okBtn.onclick = () => { close(); onOk(); };
+  cancelBtn.onclick = close;
+  overlay.onclick = (e) => { if (e.target === overlay) close(); };
+  overlay.classList.add('show');
+}
+
 async function toggleClientStatus(clientId, currentStatus, clientName) {
   const newStatus = currentStatus === 'suspended' ? 'active' : 'suspended';
-  const label = newStatus === 'suspended' ? '停止' : '再開';
-  if (!confirm(`「${clientName}」を${label}しますか？\n\n${newStatus === 'suspended' ? '停止中はAIがタスクを受け取らなくなります。' : '再開するとAIがタスクを受け取り始めます。'}`)) return;
-  try {
-    await api('PATCH', `/api/v1/clients/${clientId}/status`, {status: newStatus});
-    toast(`${label}しました`);
-    loadClients();
-    loadDashboard();
-  } catch(e) {
-    toast(e.message, true);
-  }
+  const isSuspend = newStatus === 'suspended';
+  showConfirm({
+    icon: isSuspend ? '🔴' : '🟢',
+    title: isSuspend ? `「${clientName}」を停止しますか？` : `「${clientName}」を再開しますか？`,
+    msg: isSuspend
+      ? '停止するとAIがすべてのタスクを受け取らなくなります。データは消えません。'
+      : '再開するとAIがタスクを受け取り始めます。',
+    okLabel: isSuspend ? '停止する' : '再開する',
+    okClass: isSuspend ? 'btn-danger' : 'btn-success',
+    onOk: async () => {
+      try {
+        await api('PATCH', `/api/v1/clients/${clientId}/status`, {status: newStatus});
+        toast(isSuspend ? '停止しました' : '再開しました');
+        loadClients();
+        loadDashboard();
+      } catch(e) {
+        toast(e.message, true);
+      }
+    }
+  });
 }
 
 // ── Usage Modal ───────────────────────────────────
