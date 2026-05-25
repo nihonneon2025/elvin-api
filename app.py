@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from contextlib import contextmanager
 from functools import wraps
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 
 app = Flask(__name__)
 
@@ -109,6 +109,45 @@ def init_db():
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
+
+
+# ── セットアップ用デフォルトプロンプト ─────────────────────────────────────
+
+_SETUP_URVAN_PROMPT = """あなたは振り分け担当AIです。
+自分では絶対に回答・説明・作業をしてはいけません。
+返答は必ず以下のどちらかの形式1行のみです。それ以外の文字を出力してはいけません。
+
+【業務指示の場合】担当AIに振り分ける:
+DISPATCH:担当AI名:ユーザーの元メッセージをそのままコピー
+
+担当AI（名前は正確に）:
+- 総務部長AI: 新規案件受付・受注確定・スケジュール調整・外注手配・見積書作成・発注手配
+- デザイン部長AI: 設計・資材拾い出し・原価計算・見積書作成
+- 経理部長AI: 請求書作成・経費計算・収支管理
+
+DISPATCHの指示内容ルール（絶対厳守）:
+- ユーザーが送ったメッセージをそのままコピーするだけ
+- 自分で手順・補足・指示を追加してはいけない
+
+【AI管理の場合】エージェントの追加・変更・削除・一覧:
+ADMIN:{JSONのみ}
+
+自分では作業せず、必ずDISPATCH形式またはADMIN形式でのみ返答してください。"""
+
+_SETUP_SOUMU_PROMPT = """あなたは総務部長AIです。
+以下の業務を担当します：新規案件受付・受注確定・スケジュール調整・外注手配・見積書作成・発注手配。
+
+業務システムAPI情報・PDF送付ルール・完了報告ルールは管理画面から設定してください。"""
+
+_SETUP_KEIRI_PROMPT = """あなたは経理部長AIです。
+以下の業務を担当します：請求書作成・送付・経費計算・収支管理・書類整理。
+
+業務システムAPI情報・PDF送付ルール・完了報告ルールは管理画面から設定してください。"""
+
+_SETUP_DESIGN_PROMPT = """あなたはデザイン部長AIです。
+以下の業務を担当します：設計・内装設計・資材拾い出し・原価計算・積算見積書作成。
+
+業務システムAPI情報・PDF送付ルール・完了報告ルールは管理画面から設定してください。"""
 
 
 def line_reply(reply_token: str, text: str):
@@ -701,6 +740,90 @@ def status():
         }
         for c in clients
     ])
+
+
+# ── 管理画面 ─────────────────────────────────────────────────────────────
+
+@app.route("/admin")
+def admin_page():
+    return send_file(os.path.join(os.path.dirname(__file__), "admin.html"))
+
+
+# ── 初回セットアップ（顧客+デフォルトエージェント一括作成） ───────────────
+
+@app.route("/api/v1/setup/client", methods=["POST"])
+@require_daemon
+def setup_client():
+    data = request.get_json(force=True)
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    client_id = (data.get("client_id") or "").strip() or f"client_{str(uuid.uuid4())[:6]}"
+    line_group_id = (data.get("line_group_id") or "").strip()
+    token = str(uuid.uuid4()).replace("-", "")
+
+    default_agents = [
+        {"name": "URVAN",       "role": "振り分け担当",   "line_group_id": line_group_id, "system_prompt": _SETUP_URVAN_PROMPT},
+        {"name": "総務部長AI",  "role": "総務・案件管理", "line_group_id": "",            "system_prompt": _SETUP_SOUMU_PROMPT},
+        {"name": "経理部長AI",  "role": "経理・請求書管理","line_group_id": "",           "system_prompt": _SETUP_KEIRI_PROMPT},
+        {"name": "デザイン部長AI","role": "設計・見積・積算","line_group_id": "",          "system_prompt": _SETUP_DESIGN_PROMPT},
+    ]
+
+    with get_db() as conn:
+        if conn.execute("SELECT id FROM clients WHERE id = ?", (client_id,)).fetchone():
+            return jsonify({"error": "client_id already exists"}), 409
+
+        conn.execute(
+            "INSERT INTO clients (id, token, name, created_at) VALUES (?, ?, ?, ?)",
+            (client_id, token, name, now_iso()),
+        )
+
+        created = []
+        for ag in default_agents:
+            agent_id = f"{client_id}_{uuid.uuid4().hex[:6]}"
+            conn.execute(
+                "INSERT INTO agents (id, client_id, name, role, line_group_id, system_prompt, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (agent_id, client_id, ag["name"], ag["role"], ag["line_group_id"], ag["system_prompt"], now_iso()),
+            )
+            conn.execute(
+                "INSERT INTO agent_tools (id, agent_id, tool_name, config, enabled, created_at)"
+                " VALUES (?, ?, 'ELVIN_task', '{}', 1, ?)",
+                (str(uuid.uuid4()), agent_id, now_iso()),
+            )
+            created.append({"agent_id": agent_id, "name": ag["name"], "role": ag["role"]})
+
+    return jsonify({"client_id": client_id, "token": token, "agents": created}), 201
+
+
+# ── タスク履歴（管理画面用） ──────────────────────────────────────────────
+
+@app.route("/api/v1/tasks/recent", methods=["GET"])
+@require_daemon
+def recent_tasks():
+    limit = min(int(request.args.get("limit", 50)), 200)
+    client_id = request.args.get("client_id")
+
+    with get_db() as conn:
+        if client_id:
+            rows = conn.execute(
+                "SELECT t.id, t.client_id, t.agent_id, a.name AS agent_name,"
+                " t.type, t.status, t.error, t.result, t.created_at, t.completed_at"
+                " FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id"
+                " WHERE t.client_id = ? ORDER BY t.created_at DESC LIMIT ?",
+                (client_id, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT t.id, t.client_id, t.agent_id, a.name AS agent_name,"
+                " t.type, t.status, t.error, t.result, t.created_at, t.completed_at"
+                " FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id"
+                " ORDER BY t.created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+
+    return jsonify([dict(r) for r in rows])
 
 
 # ── 起動 ─────────────────────────────────────────────────────────────────

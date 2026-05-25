@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ELVIN SYSTEM MANAGER</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;height:100vh;overflow:hidden}
+a{color:inherit;text-decoration:none}
+button{cursor:pointer;font-family:inherit}
+
+/* ── Login ─────────────────────────────────── */
+#login-screen{
+  display:flex;align-items:center;justify-content:center;height:100vh;
+  background:radial-gradient(ellipse at center,#1e3a5f 0%,#0f172a 70%)
+}
+.login-box{
+  width:360px;padding:48px 40px;background:#1e293b;border-radius:16px;
+  border:1px solid #334155;text-align:center
+}
+.login-logo{font-size:28px;font-weight:800;letter-spacing:4px;color:#3b82f6;margin-bottom:4px}
+.login-sub{font-size:11px;letter-spacing:3px;color:#64748b;margin-bottom:36px}
+.login-box input{
+  width:100%;padding:12px 16px;background:#0f172a;border:1px solid #334155;
+  border-radius:8px;color:#e2e8f0;font-size:14px;margin-bottom:12px;outline:none
+}
+.login-box input:focus{border-color:#3b82f6}
+.login-box button{
+  width:100%;padding:12px;background:#3b82f6;border:none;border-radius:8px;
+  color:#fff;font-size:14px;font-weight:600;transition:background .2s
+}
+.login-box button:hover{background:#2563eb}
+#login-error{color:#ef4444;font-size:12px;margin-top:10px;min-height:16px}
+
+/* ── App Layout ──────────────────────────────── */
+#app{display:flex;height:100vh}
+#sidebar{
+  width:220px;background:#1e293b;border-right:1px solid #334155;
+  display:flex;flex-direction:column;flex-shrink:0
+}
+.sidebar-brand{
+  padding:24px 20px 20px;border-bottom:1px solid #334155
+}
+.sidebar-logo{font-size:18px;font-weight:800;letter-spacing:3px;color:#3b82f6}
+.sidebar-sub{font-size:10px;letter-spacing:2px;color:#475569;margin-top:2px}
+.sidebar-nav{flex:1;padding:12px 0}
+.nav-item{
+  display:flex;align-items:center;gap:10px;padding:10px 20px;
+  font-size:13px;color:#94a3b8;cursor:pointer;transition:all .15s;
+  border-left:3px solid transparent
+}
+.nav-item:hover{color:#e2e8f0;background:#1a2840}
+.nav-item.active{color:#3b82f6;background:#172035;border-left-color:#3b82f6;font-weight:600}
+.nav-item svg{width:16px;height:16px;flex-shrink:0}
+.sidebar-footer{
+  padding:16px 20px;border-top:1px solid #334155;font-size:11px;color:#475569
+}
+#content{flex:1;overflow-y:auto;padding:28px}
+
+/* ── Header ──────────────────────────────────── */
+.page-header{
+  display:flex;align-items:center;justify-content:space-between;margin-bottom:24px
+}
+.page-title{font-size:20px;font-weight:700;color:#f1f5f9}
+.btn{
+  padding:8px 16px;border-radius:7px;border:none;font-size:13px;font-weight:500;
+  cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:6px
+}
+.btn-primary{background:#3b82f6;color:#fff}
+.btn-primary:hover{background:#2563eb}
+.btn-sm{padding:5px 12px;font-size:12px}
+.btn-ghost{background:transparent;color:#94a3b8;border:1px solid #334155}
+.btn-ghost:hover{color:#e2e8f0;border-color:#475569}
+.btn-danger{background:#ef4444;color:#fff}
+.btn-danger:hover{background:#dc2626}
+.btn-success{background:#22c55e;color:#fff}
+.btn-success:hover{background:#16a34a}
+
+/* ── Stats Cards ─────────────────────────────── */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.stat-card{
+  background:#1e293b;border:1px solid #334155;border-radius:12px;padding:20px
+}
+.stat-label{font-size:11px;color:#64748b;letter-spacing:1px;text-transform:uppercase}
+.stat-value{font-size:28px;font-weight:700;color:#f1f5f9;margin-top:6px}
+.stat-sub{font-size:11px;color:#475569;margin-top:4px}
+
+/* ── Table ───────────────────────────────────── */
+.card{background:#1e293b;border:1px solid #334155;border-radius:12px;overflow:hidden;margin-bottom:20px}
+.card-header{
+  padding:16px 20px;border-bottom:1px solid #334155;
+  display:flex;align-items:center;justify-content:space-between
+}
+.card-title{font-size:14px;font-weight:600;color:#f1f5f9}
+table{width:100%;border-collapse:collapse}
+th{
+  padding:11px 16px;text-align:left;font-size:11px;font-weight:600;
+  color:#64748b;letter-spacing:1px;text-transform:uppercase;
+  background:#172035;border-bottom:1px solid #334155
+}
+td{padding:12px 16px;font-size:13px;border-bottom:1px solid #1a2840;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#172035}
+.cell-muted{color:#64748b;font-size:12px}
+.cell-mono{font-family:monospace;font-size:12px;color:#94a3b8}
+
+/* ── Badges ──────────────────────────────────── */
+.badge{
+  display:inline-block;padding:2px 8px;border-radius:4px;
+  font-size:11px;font-weight:600;letter-spacing:.3px
+}
+.badge-green{background:#14532d;color:#4ade80}
+.badge-red{background:#450a0a;color:#f87171}
+.badge-yellow{background:#451a03;color:#fbbf24}
+.badge-blue{background:#172554;color:#60a5fa}
+.badge-gray{background:#1e293b;color:#64748b;border:1px solid #334155}
+
+/* ── Agent Card ──────────────────────────────── */
+.agent-list{display:flex;flex-direction:column;gap:12px;padding:16px}
+.agent-card{
+  background:#172035;border:1px solid #334155;border-radius:10px;padding:14px 16px
+}
+.agent-card-header{display:flex;align-items:center;justify-content:space-between}
+.agent-name{font-size:14px;font-weight:600;color:#e2e8f0}
+.agent-role{font-size:11px;color:#64748b;margin-top:2px}
+.agent-id{font-size:10px;font-family:monospace;color:#475569;margin-top:4px}
+.agent-actions{display:flex;gap:8px}
+
+/* ── Setup Form ──────────────────────────────── */
+.setup-form{
+  background:#1e293b;border:1px solid #334155;border-radius:12px;padding:28px;
+  max-width:600px
+}
+.form-group{margin-bottom:18px}
+label{display:block;font-size:12px;font-weight:600;color:#94a3b8;margin-bottom:6px;letter-spacing:.5px;text-transform:uppercase}
+input[type=text],input[type=password],textarea,select{
+  width:100%;padding:10px 14px;background:#0f172a;border:1px solid #334155;
+  border-radius:8px;color:#e2e8f0;font-size:13px;font-family:inherit;outline:none;transition:border .15s
+}
+input:focus,textarea:focus,select:focus{border-color:#3b82f6}
+textarea{resize:vertical;min-height:180px;font-size:12px;line-height:1.6}
+.form-hint{font-size:11px;color:#475569;margin-top:5px}
+
+/* ── Result Box ──────────────────────────────── */
+.result-box{
+  background:#0f172a;border:1px solid #334155;border-radius:10px;padding:20px;margin-top:20px
+}
+.result-title{font-size:13px;font-weight:600;color:#22c55e;margin-bottom:14px;display:flex;align-items:center;gap:6px}
+.token-row{
+  display:flex;align-items:center;gap:10px;background:#172035;
+  border-radius:7px;padding:10px 14px;margin-bottom:10px
+}
+.token-label{font-size:11px;color:#64748b;width:80px;flex-shrink:0}
+.token-value{font-family:monospace;font-size:12px;color:#60a5fa;flex:1;word-break:break-all}
+.copy-btn{
+  padding:4px 10px;background:#1e3a5f;border:1px solid #3b82f6;border-radius:5px;
+  color:#60a5fa;font-size:11px;cursor:pointer;flex-shrink:0
+}
+.copy-btn:hover{background:#2563eb;color:#fff}
+
+/* ── Modal ───────────────────────────────────── */
+#modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;
+  display:flex;align-items:center;justify-content:center
+}
+.modal{
+  background:#1e293b;border:1px solid #334155;border-radius:14px;
+  width:680px;max-width:95vw;max-height:90vh;overflow:hidden;
+  display:flex;flex-direction:column
+}
+.modal-header{
+  padding:20px 24px;border-bottom:1px solid #334155;
+  display:flex;align-items:center;justify-content:space-between
+}
+.modal-title{font-size:16px;font-weight:700;color:#f1f5f9}
+.modal-close{
+  width:28px;height:28px;background:#334155;border:none;border-radius:6px;
+  color:#94a3b8;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center
+}
+.modal-close:hover{background:#475569;color:#fff}
+.modal-body{padding:24px;overflow-y:auto;flex:1}
+.modal-footer{padding:16px 24px;border-top:1px solid #334155;display:flex;justify-content:flex-end;gap:10px}
+
+/* ── Status dot ──────────────────────────────── */
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px}
+.dot-green{background:#22c55e}
+.dot-gray{background:#475569}
+.dot-red{background:#ef4444}
+
+/* ── Misc ────────────────────────────────────── */
+.empty-state{text-align:center;padding:48px;color:#475569}
+.empty-state-icon{font-size:40px;margin-bottom:12px}
+.flex-center{display:flex;align-items:center;gap:8px}
+.text-sm{font-size:12px}
+.text-muted{color:#64748b}
+.mt-3{margin-top:12px}
+.spinner{
+  width:16px;height:16px;border:2px solid #334155;border-top-color:#3b82f6;
+  border-radius:50%;animation:spin .6s linear infinite;display:inline-block
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{
+  position:fixed;bottom:24px;right:24px;padding:12px 20px;
+  background:#22c55e;color:#fff;border-radius:8px;font-size:13px;font-weight:500;
+  z-index:200;animation:slideIn .2s ease
+}
+.toast.error{background:#ef4444}
+@keyframes slideIn{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+</style>
+</head>
+<body>
+
+<!-- ── Login Screen ─────────────────────────── -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">ELVIN</div>
+    <div class="login-sub">SYSTEM MANAGER</div>
+    <input type="password" id="secret-input" placeholder="管理キーを入力"
+      onkeydown="if(event.key==='Enter')doLogin()">
+    <button onclick="doLogin()">ログイン</button>
+    <div id="login-error"></div>
+  </div>
+</div>
+
+<!-- ── Main App ──────────────────────────────── -->
+<div id="app" style="display:none">
+  <aside id="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-logo">ELVIN</div>
+      <div class="sidebar-sub">SYSTEM MANAGER</div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-item active" onclick="showTab('dashboard',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        ダッシュボード
+      </div>
+      <div class="nav-item" onclick="showTab('clients',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        顧客管理
+      </div>
+      <div class="nav-item" onclick="showTab('setup',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2"/></svg>
+        新規セットアップ
+      </div>
+      <div class="nav-item" onclick="showTab('tasks',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        タスクログ
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div>管理キー認証済み</div>
+      <div style="margin-top:4px;cursor:pointer;color:#3b82f6" onclick="logout()">ログアウト</div>
+    </div>
+  </aside>
+
+  <main id="content">
+    <!-- ── Dashboard ── -->
+    <div id="tab-dashboard">
+      <div class="page-header">
+        <div class="page-title">ダッシュボード</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadDashboard()">更新</button>
+      </div>
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card"><div class="stat-label">顧客数</div><div class="stat-value" id="stat-clients">—</div></div>
+        <div class="stat-card"><div class="stat-label">エージェント数</div><div class="stat-value" id="stat-agents">—</div></div>
+        <div class="stat-card"><div class="stat-label">完了タスク（全期間）</div><div class="stat-value" id="stat-done">—</div></div>
+        <div class="stat-card"><div class="stat-label">エラー（全期間）</div><div class="stat-value" id="stat-errors">—</div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">顧客一覧</div>
+        </div>
+        <table>
+          <thead><tr>
+            <th>状態</th><th>会社名</th><th>顧客ID</th><th>エージェント数</th><th>最終接続</th>
+          </tr></thead>
+          <tbody id="dash-clients-body">
+            <tr><td colspan="5" class="empty-state">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Clients ── -->
+    <div id="tab-clients" style="display:none">
+      <div class="page-header">
+        <div class="page-title">顧客管理</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadClients()">更新</button>
+      </div>
+      <div id="clients-container">
+        <div class="empty-state"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- ── Setup ── -->
+    <div id="tab-setup" style="display:none">
+      <div class="page-header">
+        <div class="page-title">新規顧客セットアップ</div>
+      </div>
+      <div class="setup-form">
+        <div class="form-group">
+          <label>会社名 *</label>
+          <input type="text" id="setup-name" placeholder="例: 株式会社サンプル">
+        </div>
+        <div class="form-group">
+          <label>顧客ID <span style="font-weight:400;text-transform:none;color:#475569">（空白で自動生成）</span></label>
+          <input type="text" id="setup-clientid" placeholder="例: sample_001">
+          <div class="form-hint">英数字・アンダースコアのみ。空白の場合は自動で生成されます。</div>
+        </div>
+        <div class="form-group">
+          <label>LINE グループID <span style="font-weight:400;text-transform:none;color:#475569">（URVANが受け取るLINEグループ）</span></label>
+          <input type="text" id="setup-linegroupid" placeholder="例: Cb81a369d246...">
+          <div class="form-hint">後から管理画面で変更できます。</div>
+        </div>
+        <button class="btn btn-primary" onclick="doSetup()" id="setup-btn">
+          セットアップ実行
+        </button>
+        <div id="setup-result"></div>
+      </div>
+    </div>
+
+    <!-- ── Tasks ── -->
+    <div id="tab-tasks" style="display:none">
+      <div class="page-header">
+        <div class="page-title">タスクログ</div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <select id="tasks-client-filter" onchange="loadTasks()" style="width:180px;padding:7px 12px">
+            <option value="">全顧客</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="loadTasks()">更新</button>
+        </div>
+      </div>
+      <div class="card">
+        <table>
+          <thead><tr>
+            <th>日時</th><th>顧客</th><th>エージェント</th><th>種別</th><th>ステータス</th><th>詳細</th>
+          </tr></thead>
+          <tbody id="tasks-body">
+            <tr><td colspan="6" class="empty-state">読み込み中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ── Modal ─────────────────────────────────── -->
+<div id="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">エージェント編集</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer"></div>
+  </div>
+</div>
+
+<script>
+const BASE = '';
+let SECRET = '';
+let STATUS_DATA = [];
+let EDIT_AGENT_ID = '';
+
+// ── Auth ────────────────────────────────────────
+async function doLogin() {
+  const s = document.getElementById('secret-input').value.trim();
+  if (!s) return;
+  try {
+    const r = await apiFetch('GET', '/api/v1/status', null, s);
+    if (r.ok) {
+      SECRET = s;
+      localStorage.setItem('elvin_secret', s);
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app').style.display = 'flex';
+      loadDashboard();
+    } else {
+      document.getElementById('login-error').textContent = '管理キーが正しくありません';
+    }
+  } catch {
+    document.getElementById('login-error').textContent = '接続できません';
+  }
+}
+
+function logout() {
+  localStorage.removeItem('elvin_secret');
+  location.reload();
+}
+
+// ── API ─────────────────────────────────────────
+async function apiFetch(method, path, body, secret) {
+  const s = secret || SECRET;
+  const opts = {
+    method,
+    headers: { 'X-Daemon-Secret': s, 'Content-Type': 'application/json' },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  return fetch(BASE + path, opts);
+}
+
+async function api(method, path, body) {
+  const r = await apiFetch(method, path, body);
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    throw new Error(j.error || `HTTP ${r.status}`);
+  }
+  return r.json();
+}
+
+// ── Tab Navigation ───────────────────────────────
+function showTab(name, el) {
+  document.querySelectorAll('[id^="tab-"]').forEach(t => t.style.display = 'none');
+  document.getElementById('tab-' + name).style.display = '';
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  if (el) el.classList.add('active');
+  if (name === 'dashboard') loadDashboard();
+  if (name === 'clients') loadClients();
+  if (name === 'tasks') loadTasks();
+}
+
+// ── Dashboard ────────────────────────────────────
+async function loadDashboard() {
+  try {
+    const data = await api('GET', '/api/v1/status');
+    STATUS_DATA = data;
+
+    let totalAgents = 0, totalDone = 0, totalErrors = 0;
+    data.forEach(c => {
+      c.agents.forEach(a => {
+        totalAgents++;
+        totalDone += (a.tasks && a.tasks.completed) || 0;
+        totalErrors += (a.tasks && a.tasks.failed) || 0;
+      });
+    });
+
+    document.getElementById('stat-clients').textContent = data.length;
+    document.getElementById('stat-agents').textContent = totalAgents;
+    document.getElementById('stat-done').textContent = totalDone;
+    document.getElementById('stat-errors').textContent = totalErrors;
+
+    const tbody = document.getElementById('dash-clients-body');
+    if (data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-state text-muted">顧客なし</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(c => {
+      const active = c.last_seen && (Date.now() - new Date(c.last_seen).getTime() < 60000);
+      const dot = active ? '<span class="dot dot-green"></span>' : '<span class="dot dot-gray"></span>';
+      const ls = c.last_seen ? fmtTime(c.last_seen) : '未接続';
+      return `<tr>
+        <td>${dot}${active ? '<span class="badge badge-green">オンライン</span>' : '<span class="badge badge-gray">オフライン</span>'}</td>
+        <td><strong>${esc(c.name)}</strong></td>
+        <td class="cell-mono">${esc(c.id)}</td>
+        <td>${c.agents.length}</td>
+        <td class="cell-muted">${ls}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    toast('読み込みエラー: ' + e.message, true);
+  }
+}
+
+// ── Clients ──────────────────────────────────────
+async function loadClients() {
+  const container = document.getElementById('clients-container');
+  container.innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
+  try {
+    const data = await api('GET', '/api/v1/status');
+    STATUS_DATA = data;
+    if (data.length === 0) {
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">👥</div><div>顧客が登録されていません</div><div class="text-muted text-sm mt-3">「新規セットアップ」から追加してください</div></div>';
+      return;
+    }
+    container.innerHTML = data.map(c => renderClientCard(c)).join('');
+  } catch(e) {
+    container.innerHTML = '<div class="empty-state text-muted">読み込みエラー: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderClientCard(c) {
+  const active = c.last_seen && (Date.now() - new Date(c.last_seen).getTime() < 60000);
+  const ls = c.last_seen ? fmtTime(c.last_seen) : '未接続';
+  const agents = c.agents.map(a => `
+    <div class="agent-card">
+      <div class="agent-card-header">
+        <div>
+          <div class="agent-name">${esc(a.name)}</div>
+          <div class="agent-role">${esc(a.role || '役割未設定')}</div>
+          <div class="agent-id">ID: ${esc(a.id)}</div>
+        </div>
+        <div class="agent-actions">
+          <span class="badge ${a.enabled ? 'badge-green' : 'badge-gray'}">${a.enabled ? '有効' : '無効'}</span>
+          <button class="btn btn-ghost btn-sm" onclick="openEditModal('${esc(a.id)}','${esc(a.name)}','${esc(c.id)}')">編集</button>
+        </div>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:16px;font-size:11px;color:#64748b">
+        ${fmtTaskBadges(a.tasks)}
+        <span>最終応答: ${a.last_seen ? fmtTime(a.last_seen) : '—'}</span>
+      </div>
+    </div>
+  `).join('');
+
+  return `
+  <div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <div>
+        <div class="card-title">${esc(c.name)}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:3px">ID: ${esc(c.id)} &nbsp;|&nbsp; 最終接続: ${ls}</div>
+      </div>
+      <div class="flex-center">
+        ${active ? '<span class="badge badge-green">オンライン</span>' : '<span class="badge badge-gray">オフライン</span>'}
+        <button class="btn btn-ghost btn-sm" onclick="showTokenModal('${esc(c.id)}')">トークン確認</button>
+      </div>
+    </div>
+    <div class="agent-list">${agents || '<div class="text-muted text-sm">エージェントなし</div>'}</div>
+  </div>`;
+}
+
+function fmtTaskBadges(tasks) {
+  if (!tasks) return '';
+  return Object.entries(tasks).map(([k,v]) => {
+    const cls = k==='completed'?'badge-green':k==='failed'?'badge-red':'badge-yellow';
+    return `<span class="badge ${cls}">${k}: ${v}</span>`;
+  }).join(' ');
+}
+
+// ── Agent Edit Modal ──────────────────────────────
+async function openEditModal(agentId, agentName, clientId) {
+  EDIT_AGENT_ID = agentId;
+  document.getElementById('modal-title').textContent = `${agentName} — system_prompt 編集`;
+  document.getElementById('modal-body').innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
+  document.getElementById('modal-footer').innerHTML = '';
+  document.getElementById('modal-overlay').style.display = 'flex';
+
+  try {
+    // system_promptを取得するためmanage/agentsを呼ぶ（clientのtoken不明なのでstatusから）
+    // ここではdaemon権限で agents/{id} を直接取得できないため、
+    // manage/agentsを顧客tokenで叩けないが、admin権限で全エージェントのpromptは
+    // status APIに含まれていない。別途エンドポイントを追加するか、
+    // 現状は textarea を空で表示してユーザーに入力してもらう方式にする
+    document.getElementById('modal-body').innerHTML = `
+      <div class="form-group">
+        <label>エージェントID</label>
+        <input type="text" value="${esc(agentId)}" readonly style="color:#64748b">
+      </div>
+      <div class="form-group">
+        <label>system_prompt</label>
+        <textarea id="modal-prompt" placeholder="プロンプトを入力..." rows="14"></textarea>
+        <div class="form-hint">現在のプロンプトを取得するには「現在値を読み込む」を押してください。</div>
+      </div>`;
+    document.getElementById('modal-footer').innerHTML = `
+      <button class="btn btn-ghost" onclick="loadAgentPrompt('${esc(agentId)}','${esc(clientId)}')">現在値を読み込む</button>
+      <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="saveAgentPrompt()">保存</button>`;
+  } catch(e) {
+    document.getElementById('modal-body').innerHTML = '<div class="text-muted">読み込みエラー</div>';
+  }
+}
+
+async function loadAgentPrompt(agentId, clientId) {
+  // Admin権限でエージェントのsystem_promptを取得
+  // エージェントごとのGETは現状未実装のため、全エージェントを取得して探す
+  try {
+    // manage/agentsはclientトークン必要なので、新規エンドポイントが必要
+    // 暫定: agent PATCH APIで読み込みは対応しないが、
+    // こちら側からはDaemon Secretで全clients/agentsは取得できる
+    // list_agents でpromptが返ってこないので、今はプロンプト読み込み不可メッセージを表示
+    toast('管理画面からのprompt読み込みは近日対応予定です', true);
+  } catch(e) {
+    toast(e.message, true);
+  }
+}
+
+async function saveAgentPrompt() {
+  const prompt = document.getElementById('modal-prompt').value.trim();
+  if (!prompt) { toast('プロンプトを入力してください', true); return; }
+  try {
+    await api('PATCH', `/api/v1/agents/${EDIT_AGENT_ID}`, { system_prompt: prompt });
+    toast('保存しました');
+    closeModal();
+    loadClients();
+  } catch(e) {
+    toast('保存エラー: ' + e.message, true);
+  }
+}
+
+async function showTokenModal(clientId) {
+  document.getElementById('modal-title').textContent = 'クライアントトークン';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="text-muted text-sm" style="margin-bottom:16px">
+      セキュリティのため、トークンはセットアップ時のみ表示されます。<br>
+      確認が必要な場合はVPS上のDBを直接参照してください。
+    </div>
+    <div style="background:#0f172a;border-radius:8px;padding:14px;font-family:monospace;font-size:12px;color:#94a3b8">
+      ssh root@210.131.215.16<br>
+      sqlite3 /root/braintrust-api/tasks.db<br>
+      SELECT id,token FROM clients WHERE id='${esc(clientId)}';
+    </div>`;
+  document.getElementById('modal-footer').innerHTML = '<button class="btn btn-ghost" onclick="closeModal()">閉じる</button>';
+  document.getElementById('modal-overlay').style.display = 'flex';
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').style.display = 'none';
+}
+
+// ── Setup ────────────────────────────────────────
+async function doSetup() {
+  const name = document.getElementById('setup-name').value.trim();
+  if (!name) { toast('会社名を入力してください', true); return; }
+
+  const clientId = document.getElementById('setup-clientid').value.trim();
+  const lineGroupId = document.getElementById('setup-linegroupid').value.trim();
+
+  const btn = document.getElementById('setup-btn');
+  btn.textContent = '処理中...';
+  btn.disabled = true;
+  document.getElementById('setup-result').innerHTML = '';
+
+  try {
+    const data = await api('POST', '/api/v1/setup/client', {
+      name, client_id: clientId || undefined, line_group_id: lineGroupId || undefined
+    });
+
+    const agentRows = data.agents.map(a => `
+      <div class="token-row">
+        <div class="token-label">${esc(a.name)}</div>
+        <div class="token-value">${esc(a.agent_id)}</div>
+      </div>`).join('');
+
+    document.getElementById('setup-result').innerHTML = `
+      <div class="result-box">
+        <div class="result-title">✓ セットアップ完了</div>
+        <div class="token-row">
+          <div class="token-label">顧客ID</div>
+          <div class="token-value">${esc(data.client_id)}</div>
+          <button class="copy-btn" onclick="copyText('${esc(data.client_id)}')">コピー</button>
+        </div>
+        <div class="token-row">
+          <div class="token-label">トークン</div>
+          <div class="token-value">${esc(data.token)}</div>
+          <button class="copy-btn" onclick="copyText('${esc(data.token)}')">コピー</button>
+        </div>
+        <div style="margin:14px 0 8px;font-size:11px;font-weight:600;color:#94a3b8;letter-spacing:1px">作成されたエージェント</div>
+        ${agentRows}
+        <div style="margin-top:14px;font-size:11px;color:#475569">
+          ダッシュボードの「daemon起動コマンド」に上記のトークンを設定してください。<br>
+          エージェントのsystem_promptは「顧客管理」タブから編集できます。
+        </div>
+      </div>`;
+
+    // clear form
+    document.getElementById('setup-name').value = '';
+    document.getElementById('setup-clientid').value = '';
+    document.getElementById('setup-linegroupid').value = '';
+  } catch(e) {
+    toast('セットアップエラー: ' + e.message, true);
+  } finally {
+    btn.textContent = 'セットアップ実行';
+    btn.disabled = false;
+  }
+}
+
+// ── Tasks ────────────────────────────────────────
+async function loadTasks() {
+  const tbody = document.getElementById('tasks-body');
+  tbody.innerHTML = '<tr><td colspan="6" class="empty-state"><div class="spinner"></div></td></tr>';
+
+  const clientId = document.getElementById('tasks-client-filter').value;
+
+  // populate filter if needed
+  if (STATUS_DATA.length > 0) {
+    const sel = document.getElementById('tasks-client-filter');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">全顧客</option>' +
+      STATUS_DATA.map(c => `<option value="${esc(c.id)}" ${c.id===current?'selected':''}>${esc(c.name)}</option>`).join('');
+  } else {
+    try {
+      STATUS_DATA = await api('GET', '/api/v1/status');
+      const sel = document.getElementById('tasks-client-filter');
+      sel.innerHTML = '<option value="">全顧客</option>' +
+        STATUS_DATA.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+    } catch {}
+  }
+
+  try {
+    const qs = clientId ? `?client_id=${clientId}&limit=100` : '?limit=100';
+    const tasks = await api('GET', '/api/v1/tasks/recent' + qs);
+
+    if (tasks.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state text-muted">タスクなし</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = tasks.map(t => {
+      const status = t.status;
+      const badgeCls = status==='completed'?'badge-green':status==='failed'?'badge-red':status==='running'?'badge-blue':'badge-yellow';
+      const statusLabel = {'completed':'完了','failed':'失敗','running':'実行中','pending':'待機中'}[status] || status;
+      const errorHint = t.error ? `<span title="${esc(t.error)}" style="cursor:help;color:#ef4444">⚠</span>` : '';
+      return `<tr>
+        <td class="cell-muted">${t.created_at ? fmtTime(t.created_at) : '—'}</td>
+        <td class="cell-mono">${esc(t.client_id)}</td>
+        <td>${esc(t.agent_name || '—')}</td>
+        <td><code style="font-size:11px;color:#94a3b8">${esc(t.type)}</code></td>
+        <td><span class="badge ${badgeCls}">${statusLabel}</span></td>
+        <td>${errorHint}${t.completed_at ? fmtTime(t.completed_at) : ''}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state text-muted">エラー: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+// ── Util ──────────────────────────────────────────
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = Math.floor((now - d) / 1000);
+  if (diff < 60) return `${diff}秒前`;
+  if (diff < 3600) return `${Math.floor(diff/60)}分前`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}時間前`;
+  return d.toLocaleDateString('ja-JP') + ' ' + d.toLocaleTimeString('ja-JP', {hour:'2-digit',minute:'2-digit'});
+}
+
+function copyText(text) {
+  navigator.clipboard.writeText(text).then(() => toast('コピーしました'));
+}
+
+function toast(msg, isError) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (isError ? ' error' : '');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+// ── Init ──────────────────────────────────────────
+(function init() {
+  const saved = localStorage.getItem('elvin_secret');
+  if (saved) {
+    document.getElementById('secret-input').value = saved;
+    doLogin();
+  }
+})();
+</script>
+</body>
+</html>
