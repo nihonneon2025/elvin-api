@@ -108,6 +108,25 @@ tr:hover td{background:#172035}
 .badge-gray{background:#1e293b;color:#64748b;border:1px solid #334155}
 .badge-orange{background:#431407;color:#fb923c}
 
+/* ── Chart ───────────────────────────────────── */
+.chart-wrap{padding:20px;height:280px;position:relative}
+.chart-controls{display:flex;gap:10px;align-items:center;padding:16px 20px 0;flex-wrap:wrap}
+.chart-controls select{padding:6px 10px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:12px}
+.chart-controls label{font-size:12px;color:#64748b}
+
+/* ── Log Tab ─────────────────────────────────── */
+.log-list{padding:0;list-style:none}
+.log-item{display:grid;grid-template-columns:160px 70px 120px 1fr;gap:10px;align-items:start;padding:10px 20px;border-bottom:1px solid #1e293b;font-size:12px}
+.log-item:hover{background:#172035}
+.log-time{color:#475569;font-family:monospace;white-space:nowrap}
+.log-msg{color:#cbd5e1;word-break:break-all;line-height:1.5}
+.badge-log-info{background:#172554;color:#60a5fa;font-size:10px;padding:2px 6px;border-radius:4px}
+.badge-log-warn{background:#451a03;color:#fbbf24;font-size:10px;padding:2px 6px;border-radius:4px}
+.badge-log-error{background:#450a0a;color:#f87171;font-size:10px;padding:2px 6px;border-radius:4px}
+.log-controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.log-controls select{padding:6px 10px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:12px}
+.log-auto-badge{font-size:11px;color:#22c55e;animation:pulse 2s infinite}
+
 /* ── Confirm Modal ───────────────────────────── */
 #confirm-overlay{
   display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);
@@ -259,6 +278,14 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         タスクログ
       </div>
+      <div class="nav-item" onclick="showTab('logs',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        デーモンログ
+      </div>
+      <div class="nav-item" onclick="showTab('chart',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        トークングラフ
+      </div>
     </nav>
     <div class="sidebar-footer">
       <div>管理キー認証済み</div>
@@ -360,6 +387,74 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
         </table>
       </div>
     </div>
+
+    <!-- ── Logs ── -->
+    <div id="tab-logs" style="display:none">
+      <div class="page-header">
+        <div class="page-title">デーモンログ</div>
+        <div class="log-controls">
+          <select id="log-client-filter" onchange="loadLogs()">
+            <option value="">全顧客</option>
+          </select>
+          <select id="log-level-filter" onchange="loadLogs()">
+            <option value="">全レベル</option>
+            <option value="info">INFO</option>
+            <option value="warn">WARN</option>
+            <option value="error">ERROR</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="loadLogs()">更新</button>
+          <span id="log-auto-indicator" class="log-auto-badge" style="display:none">● 自動更新中</span>
+        </div>
+      </div>
+      <div class="card" style="padding:0">
+        <div style="display:grid;grid-template-columns:160px 70px 120px 1fr;gap:10px;padding:10px 20px;border-bottom:1px solid #334155;font-size:11px;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:.05em">
+          <span>日時</span><span>レベル</span><span>エージェント</span><span>メッセージ</span>
+        </div>
+        <ul class="log-list" id="log-list">
+          <li style="padding:20px;text-align:center;color:#475569">読み込み中...</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ── Chart ── -->
+    <div id="tab-chart" style="display:none">
+      <div class="page-header">
+        <div class="page-title">トークングラフ</div>
+        <div class="log-controls">
+          <label>顧客:</label>
+          <select id="chart-client-filter" onchange="loadChart()">
+            <option value="all">全顧客合計</option>
+          </select>
+          <label>期間:</label>
+          <select id="chart-days" onchange="loadChart()">
+            <option value="1">1日</option>
+            <option value="7" selected>7日</option>
+            <option value="30">30日</option>
+          </select>
+          <label>表示:</label>
+          <select id="chart-mode" onchange="renderChartFromCache()">
+            <option value="cost">推定費用（円）</option>
+            <option value="tokens">トークン数</option>
+            <option value="tasks">タスク件数</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="loadChart()">更新</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="chart-wrap">
+          <canvas id="token-chart"></canvas>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-header"><div class="card-title">期間合計</div></div>
+        <div class="stats-grid" style="padding:16px">
+          <div class="stat-card"><div class="stat-label">入力トークン</div><div class="stat-value" id="chart-total-in">—</div></div>
+          <div class="stat-card"><div class="stat-label">出力トークン</div><div class="stat-value" id="chart-total-out">—</div></div>
+          <div class="stat-card"><div class="stat-label">タスク件数</div><div class="stat-value" id="chart-total-tasks">—</div></div>
+          <div class="stat-card"><div class="stat-label">推定費用</div><div class="stat-value" id="chart-total-cost">—</div></div>
+        </div>
+      </div>
+    </div>
   </main>
 </div>
 
@@ -448,7 +543,10 @@ function showTab(name, el) {
   if (name === 'dashboard') loadDashboard();
   if (name === 'clients') loadClients();
   if (name === 'tasks') loadTasks();
+  if (name === 'logs') { populateLogClientFilter(); loadLogs(); startLogAutoRefresh(); }
+  if (name === 'chart') { populateChartClientFilter(); loadChart(); }
 }
+
 
 // ── Dashboard ────────────────────────────────────
 async function loadDashboard() {
@@ -930,6 +1028,155 @@ function toast(msg, isError) {
   setTimeout(() => t.remove(), 3000);
 }
 
+// ── Log Tab ───────────────────────────────────────
+let _logTimer = null;
+
+function populateLogClientFilter() {
+  const sel = document.getElementById('log-client-filter');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">全顧客</option>' +
+    STATUS_DATA.map(c => `<option value="${esc(c.id)}" ${c.id===cur?'selected':''}>${esc(c.name)}</option>`).join('');
+}
+
+async function loadLogs() {
+  const clientId = document.getElementById('log-client-filter').value;
+  const level = document.getElementById('log-level-filter').value;
+  let url = '/api/v1/logs?limit=200';
+  if (clientId) url += `&client_id=${encodeURIComponent(clientId)}`;
+  if (level) url += `&level=${encodeURIComponent(level)}`;
+  try {
+    const rows = await api('GET', url);
+    const ul = document.getElementById('log-list');
+    if (!rows.length) {
+      ul.innerHTML = '<li style="padding:20px;text-align:center;color:#475569">ログなし</li>';
+      return;
+    }
+    const levelBadge = (lv) => {
+      const cls = lv === 'error' ? 'badge-log-error' : lv === 'warn' ? 'badge-log-warn' : 'badge-log-info';
+      return `<span class="${cls}">${(lv||'info').toUpperCase()}</span>`;
+    };
+    ul.innerHTML = rows.map(r => `
+      <li class="log-item">
+        <span class="log-time">${fmtTime(r.created_at)}</span>
+        <span>${levelBadge(r.level)}</span>
+        <span style="color:#94a3b8;font-size:11px">${esc(r.agent_name || r.client_name || '—')}</span>
+        <span class="log-msg">${esc(r.message)}</span>
+      </li>`).join('');
+  } catch(e) {
+    document.getElementById('log-list').innerHTML =
+      `<li style="padding:20px;text-align:center;color:#ef4444">${esc(e.message)}</li>`;
+  }
+}
+
+function startLogAutoRefresh() {
+  if (_logTimer) clearInterval(_logTimer);
+  _logTimer = setInterval(loadLogs, 5000);
+  document.getElementById('log-auto-indicator').style.display = '';
+}
+
+// ── Chart Tab ─────────────────────────────────────
+let _chartInstance = null;
+let _chartCache = [];
+
+function populateChartClientFilter() {
+  const sel = document.getElementById('chart-client-filter');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="all">全顧客合計</option>' +
+    STATUS_DATA.map(c => `<option value="${esc(c.id)}" ${c.id===cur?'selected':''}>${esc(c.name)}</option>`).join('');
+}
+
+async function loadChart() {
+  const clientId = document.getElementById('chart-client-filter').value;
+  const days = document.getElementById('chart-days').value;
+  let url = `/api/v1/stats/tokens?days=${days}`;
+  if (clientId && clientId !== 'all') url += `&client_id=${encodeURIComponent(clientId)}`;
+  try {
+    _chartCache = await api('GET', url);
+    renderChartFromCache();
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+function renderChartFromCache() {
+  const mode = document.getElementById('chart-mode').value;
+  const rows = _chartCache;
+
+  const labels = rows.map(r => {
+    const d = new Date(r.hour);
+    return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:00`;
+  });
+
+  let data, label, color;
+  if (mode === 'cost') {
+    data = rows.map(r => r.cost_jpy);
+    label = '推定費用（円）';
+    color = '#f59e0b';
+  } else if (mode === 'tokens') {
+    data = rows.map(r => r.tokens_in + r.tokens_out);
+    label = 'トークン数（入出力合計）';
+    color = '#3b82f6';
+  } else {
+    data = rows.map(r => r.task_count);
+    label = 'タスク件数';
+    color = '#22c55e';
+  }
+
+  const totalIn = rows.reduce((s,r) => s + r.tokens_in, 0);
+  const totalOut = rows.reduce((s,r) => s + r.tokens_out, 0);
+  const totalTasks = rows.reduce((s,r) => s + r.task_count, 0);
+  const totalCost = rows.reduce((s,r) => s + r.cost_jpy, 0);
+
+  document.getElementById('chart-total-in').textContent = totalIn.toLocaleString();
+  document.getElementById('chart-total-out').textContent = totalOut.toLocaleString();
+  document.getElementById('chart-total-tasks').textContent = totalTasks.toLocaleString();
+  document.getElementById('chart-total-cost').textContent = `¥${totalCost.toLocaleString()}`;
+
+  const ctx = document.getElementById('token-chart').getContext('2d');
+  if (_chartInstance) _chartInstance.destroy();
+  _chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label,
+        data,
+        borderColor: color,
+        backgroundColor: color + '22',
+        borderWidth: 2,
+        pointRadius: rows.length > 48 ? 0 : 3,
+        fill: true,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#94a3b8', font: { size: 12 } } },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#e2e8f0',
+          bodyColor: '#94a3b8',
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#475569', font: { size: 10 }, maxTicksLimit: 12 },
+          grid: { color: '#1e293b' }
+        },
+        y: {
+          ticks: { color: '#475569', font: { size: 11 } },
+          grid: { color: '#1e293b' },
+          beginAtZero: true,
+        }
+      }
+    }
+  });
+}
+
 // ── Init ──────────────────────────────────────────
 (function init() {
   const saved = localStorage.getItem('elvin_secret');
@@ -939,5 +1186,6 @@ function toast(msg, isError) {
   }
 })();
 </script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </body>
 </html>

@@ -113,6 +113,14 @@ def init_db():
                 FOREIGN KEY (client_id) REFERENCES clients(id),
                 FOREIGN KEY (agent_id) REFERENCES agents(id)
             );
+            CREATE TABLE IF NOT EXISTS logs (
+                id         TEXT PRIMARY KEY,
+                client_id  TEXT,
+                agent_id   TEXT,
+                level      TEXT DEFAULT 'info',
+                message    TEXT,
+                created_at TEXT
+            );
         """)
         # 既存DBへのカラム追加（冪等）
         for sql in [
@@ -866,6 +874,94 @@ def setup_client():
             created.append({"agent_id": agent_id, "name": agent_name, "role": ag.get("role", "")})
 
     return jsonify({"client_id": client_id, "token": token, "agents": created}), 201
+
+
+# ── ログ ─────────────────────────────────────────────────────────────────
+
+@app.route("/api/v1/logs", methods=["POST"])
+def post_log():
+    """デーモンからログを受信して保存"""
+    token = client_token_from_request()
+    client = get_client_by_token(token) if token else None
+    if not client:
+        return jsonify({"error": "invalid token"}), 401
+    data = request.get_json(force=True)
+    level = data.get("level", "info")
+    message = (data.get("message") or "").strip()[:500]
+    if not message:
+        return jsonify({"ok": True})
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO logs (id, client_id, agent_id, level, message, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), client["id"], data.get("agent_id"), level, message, now_iso()),
+        )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/v1/logs", methods=["GET"])
+@require_daemon
+def get_logs():
+    """ログ一覧を返す（管理画面用）"""
+    client_id = request.args.get("client_id")
+    limit = min(int(request.args.get("limit", 100)), 500)
+    level = request.args.get("level")
+    q = (
+        "SELECT l.id, l.client_id, l.agent_id, l.level, l.message, l.created_at,"
+        " c.name as client_name, a.name as agent_name"
+        " FROM logs l"
+        " LEFT JOIN clients c ON l.client_id = c.id"
+        " LEFT JOIN agents a ON l.agent_id = a.id"
+    )
+    where, params = [], []
+    if client_id:
+        where.append("l.client_id = ?"); params.append(client_id)
+    if level:
+        where.append("l.level = ?"); params.append(level)
+    if where:
+        q += " WHERE " + " AND ".join(where)
+    q += " ORDER BY l.created_at DESC LIMIT ?"
+    params.append(limit)
+    with get_db() as conn:
+        rows = conn.execute(q, params).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+# ── トークン統計（グラフ用） ──────────────────────────────────────────────
+
+@app.route("/api/v1/stats/tokens", methods=["GET"])
+@require_daemon
+def stats_tokens():
+    """時間帯別トークン使用量（グラフ用）"""
+    client_id = request.args.get("client_id")  # 省略 or 'all' で全体
+    days = min(int(request.args.get("days", 7)), 30)
+    base_q = (
+        "SELECT strftime('%Y-%m-%dT%H:00:00', created_at) as hour,"
+        " SUM(tokens_in) as tokens_in, SUM(tokens_out) as tokens_out,"
+        " COUNT(*) as task_count"
+        " FROM tasks WHERE status = 'completed'"
+        " AND created_at >= datetime('now', ?)"
+    )
+    params = [f"-{days} days"]
+    if client_id and client_id != "all":
+        base_q += " AND client_id = ?"
+        params.append(client_id)
+    base_q += " GROUP BY hour ORDER BY hour ASC"
+    with get_db() as conn:
+        rows = conn.execute(base_q, params).fetchall()
+    result = []
+    for r in rows:
+        t_in = r["tokens_in"] or 0
+        t_out = r["tokens_out"] or 0
+        cost_usd = (t_in * _COST_INPUT_PER_1M + t_out * _COST_OUTPUT_PER_1M) / 1_000_000
+        result.append({
+            "hour": r["hour"],
+            "tokens_in": t_in,
+            "tokens_out": t_out,
+            "task_count": r["task_count"],
+            "cost_jpy": int(cost_usd * _USD_TO_JPY),
+        })
+    return jsonify(result)
 
 
 # ── タスク履歴（管理画面用） ──────────────────────────────────────────────
