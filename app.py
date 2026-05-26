@@ -126,6 +126,7 @@ def init_db():
         for sql in [
             "ALTER TABLE clients ADD COLUMN status TEXT DEFAULT 'active'",
             "ALTER TABLE clients ADD COLUMN manager_status TEXT DEFAULT 'active'",
+            "ALTER TABLE clients ADD COLUMN line_channel_access_token TEXT DEFAULT ''",
             "ALTER TABLE tasks ADD COLUMN tokens_in INTEGER DEFAULT 0",
             "ALTER TABLE tasks ADD COLUMN tokens_out INTEGER DEFAULT 0",
         ]:
@@ -139,19 +140,20 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
-def line_reply(reply_token: str, text: str):
-    if not LINE_CHANNEL_ACCESS_TOKEN or not reply_token:
+def line_reply(reply_token: str, text: str, access_token: str = ""):
+    token = access_token or LINE_CHANNEL_ACCESS_TOKEN
+    if not token or not reply_token:
         return
     body = json.dumps({
         "replyToken": reply_token,
-        "messages": [{"type": "text", "text": text}]
+        "messages": [{"type": "text", "text": text[:2000]}]
     }).encode()
     req = _urlreq.Request(
         "https://api.line.me/v2/bot/message/reply",
         data=body,
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+            "Authorization": f"Bearer {token}",
         },
         method="POST",
     )
@@ -690,8 +692,9 @@ def complete_task(task_id):
 
     if success and task_row and task_row["type"] == "line_message":
         payload = json.loads(task_row["payload"])
-        reply_text = data.get("result", {}).get("reply", "完了しました")
-        line_reply(payload.get("reply_token", ""), reply_text)
+        reply_text = (data.get("result") or {}).get("output") or (data.get("result") or {}).get("reply") or "完了しました"
+        client_token_str = client["line_channel_access_token"] if "line_channel_access_token" in client.keys() else ""
+        line_reply(payload.get("reply_token", ""), reply_text, client_token_str)
 
     return jsonify({"ok": True})
 
@@ -959,6 +962,7 @@ def setup_client():
 
     client_id = (data.get("client_id") or "").strip() or f"client_{uuid.uuid4().hex[:6]}"
     token = str(uuid.uuid4()).replace("-", "")
+    line_access_token = (data.get("line_channel_access_token") or "").strip()
 
     # エージェントは自由指定（名前・役割・プロンプトを任意に設定）
     agents_input = data.get("agents", [])
@@ -968,8 +972,9 @@ def setup_client():
             return jsonify({"error": "client_id already exists"}), 409
 
         conn.execute(
-            "INSERT INTO clients (id, token, name, status, created_at) VALUES (?, ?, ?, 'active', ?)",
-            (client_id, token, name, now_iso()),
+            "INSERT INTO clients (id, token, name, status, line_channel_access_token, created_at)"
+            " VALUES (?, ?, ?, 'active', ?, ?)",
+            (client_id, token, name, line_access_token, now_iso()),
         )
 
         created = []

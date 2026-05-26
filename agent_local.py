@@ -422,8 +422,23 @@ def execute(task: dict, agent: dict) -> dict:
 
     elif t == "line_message":
         text = p.get("text", "")
-        agent_name = agent.get("name", "ELVIN")
-        return {"reply": f"[{agent_name}] 受信しました: {text}"}
+        if not text:
+            return {"output": ""}
+        system_prompt = agent.get("system_prompt", "")
+        full_prompt = f"{system_prompt}\n\n---\n\n{text}" if system_prompt else text
+        result = subprocess.run(
+            ["claude", "--print", "--dangerously-skip-permissions", "-p", full_prompt],
+            capture_output=True, text=True, timeout=300,
+            cwd=str(Path.home()), encoding="utf-8", errors="replace",
+        )
+        if platform.system() == "Windows":
+            os.system("title ELVIN")
+        output = result.stdout.strip()[:2000] if result.stdout else ""
+        return {
+            "output": output,
+            "error": result.stderr.strip()[:500] if result.stderr else "",
+            "exit_code": result.returncode,
+        }
 
     else:
         raise ValueError(f"未対応のタスクタイプ: {t!r}")
