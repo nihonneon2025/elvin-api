@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#1a1a2e">
+  <meta name="theme-color" content="#ffffff">
   <meta name="description" content="ELVIN CHAT - AI業務アシスタント">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="ELVIN CHAT">
   <title>ELVIN CHAT</title>
   <link rel="manifest" href="manifest.json">
@@ -36,10 +36,7 @@
   <!-- ヘッダー -->
   <header id="header">
     <div class="logo">ELVIN</div>
-    <div class="agent-badge">
-      <span class="dot"></span>
-      <span id="agent-badge-name">読込中...</span>
-    </div>
+    <span class="status-dot loading" id="status-dot"></span>
     <div id="agent-select-wrap">
       <select id="agent-select" aria-label="担当AIを選択"></select>
     </div>
@@ -59,12 +56,9 @@
 
     <!-- タイピングインジケーター -->
     <div id="typing-indicator" aria-label="AI作業中">
-      <div class="spinner"></div>
-      <span id="typing-label" class="typing-label">AIが作業中...</span>
-      <div class="dots">
-        <span></span>
-        <span></span>
-        <span></span>
+      <span id="typing-label">AIが作業中...</span>
+      <div class="typing-dots">
+        <span></span><span></span><span></span>
       </div>
     </div>
 
@@ -75,7 +69,7 @@
     <div id="input-row">
       <textarea
         id="message-input"
-        placeholder="業務指示を入力（Enterで送信 / Shift+Enterで改行）"
+        placeholder="メッセージを入力…"
         rows="1"
         aria-label="メッセージ入力"
         maxlength="2000"
@@ -86,6 +80,7 @@
         </svg>
       </button>
     </div>
+    <div id="input-hint">Enterで送信 / Shift+Enterで改行</div>
   </div>
 
 </div>

@@ -40,7 +40,7 @@ const dom = {
   messageInput:  $('message-input'),
   sendBtn:       $('send-btn'),
   agentSelect:   $('agent-select'),
-  agentBadge:    $('agent-badge-name'),
+  statusDot:     $('status-dot'),
   errorBanner:   $('error-banner'),
   nameModal:     $('name-modal'),
   nameInput:     $('name-input'),
@@ -151,8 +151,10 @@ function onAgentChange() {
   if (ag) updateAgentBadge(ag.name);
 }
 
-function updateAgentBadge(name) {
-  dom.agentBadge.textContent = name;
+function updateAgentBadge(_name) {
+  if (dom.statusDot) {
+    dom.statusDot.className = 'status-dot';
+  }
 }
 
 // ── メッセージ送信 ───────────────────────────────────────────────────────
