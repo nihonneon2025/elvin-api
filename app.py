@@ -852,6 +852,21 @@ def status():
     ])
 
 
+# ── ライセンス確認（ELVIN MANAGER → VPS） ───────────────────────────────
+
+@app.route("/api/v1/license/check", methods=["GET"])
+def license_check():
+    """ELVIN MANAGERからのライセンス確認。client_tokenで認証し、停止状態を返す。"""
+    token = client_token_from_request()
+    client = get_client_by_token(token) if token else None
+    if not client:
+        return jsonify({"active": False, "reason": "unknown token"}), 402
+    status = client["status"] or "active"
+    if status == "suspended":
+        return jsonify({"active": False, "reason": "suspended"}), 402
+    return jsonify({"active": True, "name": client["name"]}), 200
+
+
 # ── 管理画面 ─────────────────────────────────────────────────────────────
 
 @app.route("/admin")
