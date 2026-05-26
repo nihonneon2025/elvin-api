@@ -1,7 +1,7 @@
 import urllib.request, json
 
 BASE = "http://localhost:5050"
-SECRET = "braintrust2026"
+SECRET = "elvin2026"
 CLIENT = "ago_001"
 
 def api(method, path, data=None):

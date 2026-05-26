@@ -931,7 +931,7 @@ async function showTokenModal(clientId) {
       確認が必要な場合はVPS上のDBを直接参照してください。
     </div>
     <div style="background:#f7f8fa;border:1px solid #eaecf0;border-radius:4px;padding:14px;font-family:'Courier New',monospace;font-size:12px;color:#2d3a52;line-height:2">
-      sqlite3 /root/braintrust-api/tasks.db<br>
+      sqlite3 /root/elvin-api/tasks.db<br>
       SELECT id,token FROM clients WHERE id='${esc(clientId)}';
     </div>`;
   document.getElementById('modal-footer').innerHTML = '<button class="btn btn-ghost" onclick="closeModal()">閉じる</button>';
