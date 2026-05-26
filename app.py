@@ -1002,6 +1002,121 @@ def setup_client():
     return jsonify({"client_id": client_id, "token": token, "agents": created}), 201
 
 
+# ── チャット用タスク投入（ELVIN CHAT → VPS） ──────────────────────────────
+
+@app.route("/api/v1/chat/send", methods=["POST"])
+def chat_send():
+    """ELVIN CHATからのメッセージ受信。client_tokenで認証し、chat_messageタスクを投入する。
+    X-Daemon-Secretは不要。JSから安全に呼び出せる。
+    """
+    token = client_token_from_request()
+    client = get_client_by_token(token) if token else None
+    if not client:
+        return jsonify({"error": "invalid token"}), 401
+
+    if (client["status"] or "active") == "suspended":
+        return jsonify({"error": "client is suspended"}), 403
+
+    data = request.get_json(force=True)
+    message = (data.get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+
+    agent_id = data.get("agent_id")  # 省略可: 省略時はクライアントの最初のエージェント
+
+    with get_db() as conn:
+        # agent_idが指定されていない場合は最初の有効エージェントを選択
+        if not agent_id:
+            ag = conn.execute(
+                "SELECT id FROM agents WHERE client_id = ? AND enabled = 1 ORDER BY created_at ASC LIMIT 1",
+                (client["id"],),
+            ).fetchone()
+            if ag:
+                agent_id = ag["id"]
+
+        if agent_id:
+            # 指定agent_idがこのclientのものかチェック
+            ag_check = conn.execute(
+                "SELECT id, name FROM agents WHERE id = ? AND client_id = ? AND enabled = 1",
+                (agent_id, client["id"]),
+            ).fetchone()
+            if not ag_check:
+                return jsonify({"error": "agent not found"}), 404
+            agent_name = ag_check["name"]
+        else:
+            agent_name = "ELVIN"
+
+        task_id = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO tasks (id, client_id, agent_id, type, payload, status, created_at)"
+            " VALUES (?, ?, ?, ?, ?, 'pending', ?)",
+            (
+                task_id,
+                client["id"],
+                agent_id,
+                "chat_message",
+                json.dumps({"text": message, "sender": data.get("sender", ""), "agent_name": agent_name},
+                           ensure_ascii=False),
+                now_iso(),
+            ),
+        )
+
+    return jsonify({"task_id": task_id, "agent_name": agent_name}), 201
+
+
+@app.route("/api/v1/chat/tasks/<task_id>", methods=["GET"])
+def chat_task_status(task_id):
+    """ELVIN CHATからのタスク状態ポーリング。client_tokenで認証。"""
+    token = client_token_from_request()
+    client = get_client_by_token(token) if token else None
+    if not client:
+        return jsonify({"error": "invalid token"}), 401
+
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, status, result, error, agent_id, created_at, completed_at"
+            " FROM tasks WHERE id = ? AND client_id = ?",
+            (task_id, client["id"]),
+        ).fetchone()
+
+    if not row:
+        return jsonify({"error": "task not found"}), 404
+
+    result_data = None
+    if row["result"]:
+        try:
+            result_data = json.loads(row["result"])
+        except Exception:
+            result_data = {"output": row["result"]}
+
+    return jsonify({
+        "task_id": row["id"],
+        "status": row["status"],
+        "result": result_data,
+        "error": row["error"],
+        "agent_id": row["agent_id"],
+        "created_at": row["created_at"],
+        "completed_at": row["completed_at"],
+    })
+
+
+@app.route("/api/v1/chat/agents", methods=["GET"])
+def chat_list_agents():
+    """ELVIN CHATからのエージェント一覧取得。client_tokenで認証。"""
+    token = client_token_from_request()
+    client = get_client_by_token(token) if token else None
+    if not client:
+        return jsonify({"error": "invalid token"}), 401
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, name, role FROM agents WHERE client_id = ? AND enabled = 1 ORDER BY created_at ASC",
+            (client["id"],),
+        ).fetchall()
+
+    return jsonify([dict(r) for r in rows])
+
+
 # ── ログ ─────────────────────────────────────────────────────────────────
 
 @app.route("/api/v1/logs", methods=["POST"])
