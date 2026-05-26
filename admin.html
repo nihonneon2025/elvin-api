@@ -1092,10 +1092,16 @@ async function doSetup() {
           <div class="token-value">${esc(data.token)}</div>
           <button class="copy-btn" onclick="copyText('${esc(data.token)}')">コピー</button>
         </div>
+        <div class="token-row" style="background:#f0f8ff;border-color:#b8d4f0">
+          <div class="token-label">Webhook URL</div>
+          <div class="token-value" style="color:#1a4a9a">${esc('https://api.nihon-neon.jp/webhook/' + data.token)}</div>
+          <button class="copy-btn" onclick="copyText('${esc('https://api.nihon-neon.jp/webhook/' + data.token)}')">コピー</button>
+        </div>
         ${data.agents.length > 0 ? '<div style="margin:14px 0 8px;font-size:11px;font-weight:600;color:#94a3b8;letter-spacing:1px">作成されたエージェント</div>' + agentRows2.join('') : agentRows2[0]}
         <div style="margin-top:14px;font-size:11px;color:#475569;line-height:1.7">
           ① トークンをデーモンの設定ファイル（elvin_config.json）に設定してください。<br>
-          ② エージェントのプロンプト・LINEグループIDは「顧客管理」タブから編集できます。
+          ② Webhook URLを LINE Developers の Webhook URL欄に設定してください。<br>
+          ③ エージェントのプロンプト・LINEグループIDは「顧客管理」タブから編集できます。
         </div>
       </div>`;
 

@@ -1,16 +1,23 @@
 """
 ELVIN ローカルエージェント
-日本ネオン株式会社 - 顧客PC常駐スクリプト
+顧客PC常駐スクリプト / .exe配布版
+
+設定方法:
+  同じフォルダに elvin_config.json を置いてください:
+  {
+    "vps_url": "https://api.nihon-neon.jp",
+    "client_token": "your_client_token",
+    "poll_interval": 5
+  }
 
 起動:
-  set ELVIN_VPS_URL=https://api.nihon-neon.jp
-  set ELVIN_TOKEN=your_client_token
-  python agent_local.py
+  elvin_agent.exe        （.exe版）
+  python agent_local.py  （スクリプト版）
 
-環境変数:
-  ELVIN_VPS_URL    VPS APIのURL（デフォルト: http://localhost:5050）
-  ELVIN_TOKEN      顧客トークン（必須）
-  POLL_INTERVAL    ポーリング間隔秒（デフォルト: 5）
+環境変数（任意・config.jsonより優先）:
+  ELVIN_VPS_URL    VPS APIのURL
+  ELVIN_TOKEN      顧客トークン
+  POLL_INTERVAL    ポーリング間隔秒
 """
 
 import base64
@@ -25,15 +32,38 @@ from pathlib import Path
 
 import requests
 
-# ── 設定 ──────────────────────────────────────────────────────────────────
-VPS_URL = os.environ.get("ELVIN_VPS_URL",
-          os.environ.get("BRAINTRUST_VPS_URL", "http://localhost:5050")).rstrip("/")
-CLIENT_TOKEN = os.environ.get("ELVIN_TOKEN",
-               os.environ.get("BRAINTRUST_TOKEN", ""))
-POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "5"))
+# ── 設定読み込み ──────────────────────────────────────────────────────────
+# .exe 化時は sys.executable のあるフォルダ、スクリプト実行時は __file__ のフォルダ
+_base_dir = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
+_config_path = _base_dir / "elvin_config.json"
+
+_cfg: dict = {}
+if _config_path.exists():
+    try:
+        _cfg = json.loads(_config_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"[WARN] elvin_config.json 読み込みエラー: {e}")
+
+VPS_URL = (
+    os.environ.get("ELVIN_VPS_URL")
+    or os.environ.get("BRAINTRUST_VPS_URL")
+    or _cfg.get("vps_url", "http://localhost:5050")
+).rstrip("/")
+
+CLIENT_TOKEN = (
+    os.environ.get("ELVIN_TOKEN")
+    or os.environ.get("BRAINTRUST_TOKEN")
+    or _cfg.get("client_token", "")
+)
+
+POLL_INTERVAL = int(
+    os.environ.get("POLL_INTERVAL")
+    or _cfg.get("poll_interval", 5)
+)
 
 if not CLIENT_TOKEN:
-    print("[ERROR] 環境変数 ELVIN_TOKEN が設定されていません")
+    print("[ERROR] client_token が設定されていません")
+    print(f"        elvin_config.json の場所: {_config_path}")
     sys.exit(1)
 
 HEADERS = {"X-Client-Token": CLIENT_TOKEN}

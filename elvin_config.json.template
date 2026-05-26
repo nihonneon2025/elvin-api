@@ -1,0 +1,5 @@
+{
+  "vps_url": "https://api.nihon-neon.jp",
+  "client_token": "ここに顧客トークンを入力",
+  "poll_interval": 5
+}

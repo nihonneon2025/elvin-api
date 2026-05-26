@@ -826,6 +826,60 @@ def line_webhook():
     return jsonify({"ok": True})
 
 
+# ── 顧客別 LINE webhook ───────────────────────────────────────────────────
+
+@app.route("/webhook/<client_token>", methods=["POST"])
+def line_webhook_client(client_token):
+    """顧客ごとの LINE webhook。client_token でクライアントを識別する。"""
+    client = get_client_by_token(client_token)
+    if not client:
+        return jsonify({"error": "invalid token"}), 401
+
+    manager_status = client["manager_status"] if "manager_status" in client.keys() else "active"
+    if (manager_status or "active") == "suspended":
+        return jsonify({"ok": True, "skipped": "suspended"})
+
+    data = request.get_json(force=True)
+    for event in (data or {}).get("events", []):
+        if event.get("type") != "message":
+            continue
+        msg = event.get("message", {})
+        if msg.get("type") != "text":
+            continue
+        text = msg.get("text", "").strip()
+        reply_token = event.get("replyToken", "")
+        source = event.get("source", {})
+        group_id = source.get("groupId", "")
+
+        with get_db() as conn:
+            agent = None
+            if group_id:
+                agent = conn.execute(
+                    "SELECT id, client_id FROM agents"
+                    " WHERE client_id = ? AND line_group_id = ? AND enabled = 1",
+                    (client["id"], group_id),
+                ).fetchone()
+            if not agent:
+                agent = conn.execute(
+                    "SELECT id, client_id FROM agents"
+                    " WHERE client_id = ? AND enabled = 1 ORDER BY created_at ASC LIMIT 1",
+                    (client["id"],),
+                ).fetchone()
+            if agent:
+                task_id = str(uuid.uuid4())
+                conn.execute(
+                    "INSERT INTO tasks (id, client_id, agent_id, type, payload, status, created_at)"
+                    " VALUES (?, ?, ?, ?, ?, 'pending', ?)",
+                    (
+                        task_id, client["id"], agent["id"], "line_message",
+                        json.dumps({"text": text, "reply_token": reply_token, "group_id": group_id},
+                                   ensure_ascii=False),
+                        now_iso(),
+                    ),
+                )
+    return jsonify({"ok": True})
+
+
 # ── ステータス概要（管理者用） ────────────────────────────────────────────
 
 @app.route("/api/v1/status", methods=["GET"])
