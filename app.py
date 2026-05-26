@@ -4,8 +4,9 @@ ELVIN VPS Task Queue API
 
 起動: python app.py
 環境変数:
-  DAEMON_SECRET  管理操作の認証キー（デフォルト: changeme）
-  PORT           リッスンポート（デフォルト: 5050）
+  DAEMON_SECRET       管理操作の認証キー（デフォルト: changeme）
+  PORT                リッスンポート（デフォルト: 5050）
+  ANTHROPIC_API_KEY   設定するとVPS側でchat_messageを直接処理（EXE不要）
 """
 
 import base64
@@ -14,6 +15,7 @@ import hmac as _hmac
 import json
 import os
 import sqlite3
+import threading
 import time
 import urllib.request as _urlreq
 import uuid
@@ -28,6 +30,8 @@ app = Flask(__name__)
 DB_PATH = os.path.join(os.path.dirname(__file__), "tasks.db")
 DAEMON_SECRET = os.environ.get("DAEMON_SECRET", "changeme")
 PORT = int(os.environ.get("PORT", 5050))
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 
@@ -1024,6 +1028,7 @@ def chat_send():
 
     agent_id = data.get("agent_id")  # 省略可: 省略時はクライアントの最初のエージェント
 
+    system_prompt = ""
     with get_db() as conn:
         # agent_idが指定されていない場合は最初の有効エージェントを選択
         if not agent_id:
@@ -1037,12 +1042,13 @@ def chat_send():
         if agent_id:
             # 指定agent_idがこのclientのものかチェック
             ag_check = conn.execute(
-                "SELECT id, name FROM agents WHERE id = ? AND client_id = ? AND enabled = 1",
+                "SELECT id, name, system_prompt FROM agents WHERE id = ? AND client_id = ? AND enabled = 1",
                 (agent_id, client["id"]),
             ).fetchone()
             if not ag_check:
                 return jsonify({"error": "agent not found"}), 404
             agent_name = ag_check["name"]
+            system_prompt = ag_check["system_prompt"] or ""
         else:
             agent_name = "ELVIN"
 
@@ -1060,6 +1066,15 @@ def chat_send():
                 now_iso(),
             ),
         )
+
+    # ANTHROPIC_API_KEY があればVPS側で即時処理（バックグラウンド）
+    if ANTHROPIC_API_KEY:
+        t = threading.Thread(
+            target=_vps_process_chat,
+            args=(task_id, client["id"], agent_id, message, system_prompt),
+            daemon=True,
+        )
+        t.start()
 
     return jsonify({"task_id": task_id, "agent_name": agent_name}), 201
 
@@ -1098,6 +1113,45 @@ def chat_task_status(task_id):
         "created_at": row["created_at"],
         "completed_at": row["completed_at"],
     })
+
+
+def _vps_process_chat(task_id: str, client_id: str, agent_id: str | None,
+                      message: str, system_prompt: str):
+    """Anthropic API で chat_message タスクを VPS 側で即時処理（バックグラウンドスレッド）。
+    ANTHROPIC_API_KEY が未設定の場合はローカルエージェントが拾う通常フローになる。
+    """
+    if not ANTHROPIC_API_KEY:
+        return
+
+    try:
+        import anthropic as _ant
+
+        ant = _ant.Anthropic(api_key=ANTHROPIC_API_KEY)
+        resp = ant.messages.create(
+            model=ANTHROPIC_MODEL,
+            max_tokens=4096,
+            system=system_prompt or "あなたは ELVIN、業務アシスタントAIです。日本語で回答してください。",
+            messages=[{"role": "user", "content": message}],
+        )
+
+        output = resp.content[0].text if resp.content else ""
+        tokens_in = resp.usage.input_tokens
+        tokens_out = resp.usage.output_tokens
+
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE tasks SET status='completed', result=?, completed_at=?, tokens_in=?, tokens_out=?"
+                " WHERE id=? AND client_id=?",
+                (json.dumps({"output": output}, ensure_ascii=False),
+                 now_iso(), tokens_in, tokens_out, task_id, client_id),
+            )
+    except Exception as e:
+        print(f"[VPS_CHAT] Anthropic API エラー: {e}")
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE tasks SET status='failed', error=? WHERE id=? AND client_id=?",
+                (str(e), task_id, client_id),
+            )
 
 
 @app.route("/api/v1/chat/agents", methods=["GET"])
