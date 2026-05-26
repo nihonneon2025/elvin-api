@@ -7,7 +7,9 @@ ELVIN ローカルエージェント
   {
     "vps_url": "https://api.nihon-neon.jp",
     "client_token": "your_client_token",
-    "poll_interval": 5
+    "poll_interval": 5,
+    "work_dir": "lineworks_send.py を置いたフォルダのフルパス",
+    "lineworks_room": "報告先 LINE WORKS グループ名"
   }
 
 起動:
@@ -60,6 +62,14 @@ POLL_INTERVAL = int(
     os.environ.get("POLL_INTERVAL")
     or _cfg.get("poll_interval", 5)
 )
+
+# work_dir: lineworks_send.py の置き場所 + Claude 実行の作業フォルダ
+# 空の場合は .exe / .py と同じフォルダを使う
+_work_dir_cfg = _cfg.get("work_dir", "").strip()
+WORK_DIR = _work_dir_cfg if (_work_dir_cfg and Path(_work_dir_cfg).exists()) else str(_base_dir)
+
+# LINE WORKS の報告先グループ名（システムプロンプトに埋め込む）
+LINEWORKS_ROOM = _cfg.get("lineworks_room", "")
 
 if not CLIENT_TOKEN:
     print("[ERROR] client_token が設定されていません")
@@ -262,13 +272,20 @@ def execute(task: dict, agent: dict) -> dict:
                     f"---\n\n{prompt}"
                 )
             elif system_prompt:
-                full_prompt = f"{system_prompt}\n\n---\n\n{prompt}"
+                lw_hint = ""
+                if LINEWORKS_ROOM:
+                    lw_script = str(Path(WORK_DIR) / "lineworks_send.py")
+                    lw_hint = (
+                        f"\n\n【LINE WORKS 通知】作業完了・中間報告は以下で送信してください:\n"
+                        f"  python \"{lw_script}\" \"{LINEWORKS_ROOM}\" <テキストファイル> --headless\n"
+                        f"  ※テキストファイルに報告内容を書いてから実行"
+                    )
+                full_prompt = f"{system_prompt}{lw_hint}\n\n---\n\n{prompt}"
             else:
                 full_prompt = prompt
 
-        cwd = r"C:\Users\Administrator\Desktop\AI版AGO"
-        work_dir = cwd if Path(cwd).exists() else str(Path.home())
-        # ディスパッチャー(URVAN)はAI版AGOのCLAUDE.mdを読ませないためホームで実行
+        work_dir = WORK_DIR
+        # ディスパッチャーはCLAUDE.mdを読ませないためホームで実行
         claude_cwd = str(Path.home()) if _is_dispatcher else work_dir
         result = subprocess.run(
             ["claude", "--print", "--dangerously-skip-permissions", "-p", full_prompt],
@@ -323,29 +340,30 @@ def execute(task: dict, agent: dict) -> dict:
             cmd_str = output[6:].strip()
             result_msg = handle_admin(cmd_str, requester_id, work_dir)
             print(f"[{ts()}] [{agent.get('name','URVAN')}] ADMIN: {result_msg[:80]}")
-            if requester_id:
+            room_name = LINEWORKS_ROOM or None
+            if not room_name and requester_id:
                 room_map_path = Path(work_dir) / "lineworks-room-map.json"
-                room_name = None
                 if room_map_path.exists():
                     try:
                         room_map = json.loads(room_map_path.read_text(encoding="utf-8"))
                         room_name = room_map.get(requester_id)
                     except Exception:
                         pass
-                if room_name:
-                    tmp = Path(work_dir) / f"_lw_admin_{requester_id[:8]}.txt"
-                    try:
-                        tmp.write_text(f"【管理】\n{result_msg}", encoding="utf-8")
-                        subprocess.run(
-                            ["python", str(Path(work_dir) / "lineworks_send.py"),
-                             room_name, str(tmp), "--headless"],
-                            timeout=60, cwd=work_dir, capture_output=True,
-                            encoding="utf-8", errors="replace",
-                        )
-                    except Exception as e:
-                        print(f"[{ts()}] ADMIN通知失敗: {e}")
-                    finally:
-                        tmp.unlink(missing_ok=True)
+            if room_name:
+                tmp_prefix = requester_id[:8] if requester_id else "admin"
+                tmp = Path(work_dir) / f"_lw_admin_{tmp_prefix}.txt"
+                try:
+                    tmp.write_text(f"【管理】\n{result_msg}", encoding="utf-8")
+                    subprocess.run(
+                        ["python", str(Path(work_dir) / "lineworks_send.py"),
+                         room_name, str(tmp), "--headless"],
+                        timeout=60, cwd=work_dir, capture_output=True,
+                        encoding="utf-8", errors="replace",
+                    )
+                except Exception as e:
+                    print(f"[{ts()}] ADMIN通知失敗: {e}")
+                finally:
+                    tmp.unlink(missing_ok=True)
             return {
                 "output": output,
                 "error": result.stderr.strip()[:500] if result.stderr else "",
@@ -353,15 +371,16 @@ def execute(task: dict, agent: dict) -> dict:
             }
 
         # 完了後に LINE WORKS ルームへ通知
-        if requester_id and output:
-            room_map_path = Path(work_dir) / "lineworks-room-map.json"
-            room_name = None
-            if room_map_path.exists():
-                try:
-                    room_map = json.loads(room_map_path.read_text(encoding="utf-8"))
-                    room_name = room_map.get(requester_id)
-                except Exception:
-                    pass
+        if output:
+            room_name = LINEWORKS_ROOM or None
+            if not room_name and requester_id:
+                room_map_path = Path(work_dir) / "lineworks-room-map.json"
+                if room_map_path.exists():
+                    try:
+                        room_map = json.loads(room_map_path.read_text(encoding="utf-8"))
+                        room_name = room_map.get(requester_id)
+                    except Exception:
+                        pass
             if room_name:
                 tmp = Path(work_dir) / f"_lw_notify_{requester_id[:8]}.txt"
                 dept = agent.get("role", "")
@@ -397,11 +416,11 @@ def execute(task: dict, agent: dict) -> dict:
         }
 
     elif t == "lineworks_send":
-        room_name = p.get("room_name", "")
+        room_name = p.get("room_name", "") or LINEWORKS_ROOM
         message = p.get("message", "")
         if not room_name or not message:
             raise ValueError("room_name と message が必要です")
-        work_dir = r"C:\Users\Administrator\Desktop\AI版AGO"
+        work_dir = WORK_DIR
         import uuid as _uuid
         tmp = Path(work_dir) / f"_lw_send_{_uuid.uuid4().hex[:8]}.txt"
         try:
@@ -434,6 +453,21 @@ def execute(task: dict, agent: dict) -> dict:
         if platform.system() == "Windows":
             os.system("title ELVIN")
         output = result.stdout.strip()[:2000] if result.stdout else ""
+        if output and LINEWORKS_ROOM:
+            import uuid as _uuid
+            tmp = Path(WORK_DIR) / f"_lw_line_{_uuid.uuid4().hex[:8]}.txt"
+            try:
+                tmp.write_text(output, encoding="utf-8")
+                subprocess.run(
+                    ["python", str(Path(WORK_DIR) / "lineworks_send.py"),
+                     LINEWORKS_ROOM, str(tmp), "--headless"],
+                    timeout=120, cwd=WORK_DIR, capture_output=True,
+                    encoding="utf-8", errors="replace",
+                )
+            except Exception as e:
+                print(f"[{ts()}] LINE WORKS通知失敗: {e}")
+            finally:
+                tmp.unlink(missing_ok=True)
         return {
             "output": output,
             "error": result.stderr.strip()[:500] if result.stderr else "",
