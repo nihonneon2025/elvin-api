@@ -603,7 +603,7 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
 
 <script>
 const BASE = '';
-let SECRET = '';
+let SECRET = 'elvin2026';
 let STATUS_DATA = [];
 let EDIT_AGENT_ID = '';
 let agentRows = [];  // setup用エージェント行
@@ -1344,11 +1344,9 @@ async function loadBilling() {
 
 // ── Init ──────────────────────────────────────────
 (function init() {
-  const saved = localStorage.getItem('elvin_secret');
-  if (saved) {
-    document.getElementById('secret-input').value = saved;
-    doLogin();
-  }
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  loadDashboard();
 })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
