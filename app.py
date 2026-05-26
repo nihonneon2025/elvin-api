@@ -692,9 +692,10 @@ def complete_task(task_id):
 
     if success and task_row and task_row["type"] == "line_message":
         payload = json.loads(task_row["payload"])
-        reply_text = (data.get("result") or {}).get("output") or (data.get("result") or {}).get("reply") or "完了しました"
-        client_token_str = client["line_channel_access_token"] if "line_channel_access_token" in client.keys() else ""
-        line_reply(payload.get("reply_token", ""), reply_text, client_token_str)
+        reply_text = (data.get("result") or {}).get("output") or (data.get("result") or {}).get("reply") or ""
+        # LINE返信はdaemon側のlineworks_send.py（Playwright）が担う。VPS側からのLINE API呼び出しは行わない
+        if reply_text and LINE_CHANNEL_ACCESS_TOKEN:
+            line_reply(payload.get("reply_token", ""), reply_text)
 
     return jsonify({"ok": True})
 
@@ -962,8 +963,6 @@ def setup_client():
 
     client_id = (data.get("client_id") or "").strip() or f"client_{uuid.uuid4().hex[:6]}"
     token = str(uuid.uuid4()).replace("-", "")
-    line_access_token = (data.get("line_channel_access_token") or "").strip()
-
     # エージェントは自由指定（名前・役割・プロンプトを任意に設定）
     agents_input = data.get("agents", [])
 
@@ -972,9 +971,8 @@ def setup_client():
             return jsonify({"error": "client_id already exists"}), 409
 
         conn.execute(
-            "INSERT INTO clients (id, token, name, status, line_channel_access_token, created_at)"
-            " VALUES (?, ?, ?, 'active', ?, ?)",
-            (client_id, token, name, line_access_token, now_iso()),
+            "INSERT INTO clients (id, token, name, status, created_at) VALUES (?, ?, ?, 'active', ?)",
+            (client_id, token, name, now_iso()),
         )
 
         created = []

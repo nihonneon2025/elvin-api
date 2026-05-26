@@ -431,12 +431,6 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
           <input type="text" id="setup-clientid" placeholder="例: sample_001">
           <div class="form-hint">英数字・アンダースコアのみ推奨。空白の場合は自動で生成されます。</div>
         </div>
-        <div class="form-group">
-          <label>LINE Channel Access Token <span style="font-weight:400;text-transform:none;color:#c0392b">必須</span></label>
-          <input type="text" id="setup-line-token" placeholder="LINE Developers → Messaging API → Channel access token">
-          <div class="form-hint">LINE Developersコンソール → 対象チャネル → Messaging API タブ → Channel access token（長期）をコピーして貼り付けてください。</div>
-        </div>
-
         <hr class="divider">
 
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -1049,8 +1043,6 @@ async function doSetup() {
   if (!name) { toast('会社名を入力してください', true); return; }
 
   const clientId = document.getElementById('setup-clientid').value.trim();
-  const lineToken = document.getElementById('setup-line-token').value.trim();
-  if (!lineToken) { toast('LINE Channel Access Token を入力してください', true); return; }
 
   // エージェント名チェック
   for (let i = 0; i < agentRows.length; i++) {
@@ -1070,7 +1062,6 @@ async function doSetup() {
     const data = await api('POST', '/api/v1/setup/client', {
       name,
       client_id: clientId || undefined,
-      line_channel_access_token: lineToken,
       agents,
     });
 
@@ -1115,7 +1106,6 @@ async function doSetup() {
 
     document.getElementById('setup-name').value = '';
     document.getElementById('setup-clientid').value = '';
-    document.getElementById('setup-line-token').value = '';
     agentRows = [];
     renderAgentRows();
   } catch(e) {
