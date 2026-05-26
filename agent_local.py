@@ -26,6 +26,7 @@ import base64
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -85,6 +86,28 @@ CLIENT_ID: str = ""
 
 def ts():
     return datetime.now().strftime("%H:%M:%S")
+
+
+def _resolve_room(prompt: str, requester_id: str, work_dir: str) -> str:
+    """返信先 LINE WORKS ルーム名を3段優先で決定する。
+    1. プロンプト内の「返信先LINE WORKSルーム名:」ヘッダー
+    2. lineworks-room-map.json[requester_id]
+    3. config の LINEWORKS_ROOM（フォールバック）
+    """
+    m = re.search(r'返信先LINE\s*WORKSルーム名[:：]\s*(.+)', prompt)
+    if m:
+        return m.group(1).strip()
+    if requester_id:
+        room_map_path = Path(work_dir) / "lineworks-room-map.json"
+        if room_map_path.exists():
+            try:
+                room_map = json.loads(room_map_path.read_text(encoding="utf-8"))
+                room = room_map.get(requester_id)
+                if room:
+                    return room
+            except Exception:
+                pass
+    return LINEWORKS_ROOM
 
 
 def reload_agents():
@@ -272,15 +295,19 @@ def execute(task: dict, agent: dict) -> dict:
                     f"---\n\n{prompt}"
                 )
             elif system_prompt:
+                _req_id_hint = p.get("requester_id", "")
+                room_name_hint = _resolve_room(prompt, _req_id_hint, WORK_DIR)
                 lw_hint = ""
-                if LINEWORKS_ROOM:
+                if room_name_hint:
                     lw_script = str(Path(WORK_DIR) / "lineworks_send.py")
                     lw_hint = (
                         f"\n\n【LINE WORKS 通知】作業完了・中間報告は以下で送信してください:\n"
-                        f"  python \"{lw_script}\" \"{LINEWORKS_ROOM}\" <テキストファイル> --headless\n"
+                        f"  python \"{lw_script}\" \"{room_name_hint}\" <テキストファイル> --headless\n"
                         f"  ※テキストファイルに報告内容を書いてから実行"
                     )
-                full_prompt = f"{system_prompt}{lw_hint}\n\n---\n\n{prompt}"
+                # 返信先ルーム名をプロンプト先頭にも明示してClaude Codeに伝達
+                room_prefix = f"返信先LINE WORKSルーム名: {room_name_hint}\n\n" if room_name_hint else ""
+                full_prompt = f"{system_prompt}{lw_hint}\n\n---\n\n{room_prefix}{prompt}"
             else:
                 full_prompt = prompt
 
@@ -310,6 +337,9 @@ def execute(task: dict, agent: dict) -> dict:
                 target_agent = next((a for a in AGENTS if a["name"] == target_name), None)
                 if target_agent:
                     try:
+                        # 返信先ルーム名を委託先にも引き継ぐ
+                        dispatch_room = _resolve_room(prompt, requester_id, work_dir)
+                        room_prefix_d = f"返信先LINE WORKSルーム名: {dispatch_room}\n\n" if dispatch_room else ""
                         requests.post(
                             f"{VPS_URL}/api/v1/tasks/delegate",
                             headers=HEADERS,
@@ -317,7 +347,7 @@ def execute(task: dict, agent: dict) -> dict:
                                 "agent_id": target_agent["agent_id"],
                                 "type": "ELVIN_task",
                                 "payload": {
-                                    "prompt": task_content,
+                                    "prompt": f"{room_prefix_d}{task_content}",
                                     "requester_id": requester_id,
                                     "requester_name": p.get("requester_name", ""),
                                 },
@@ -340,15 +370,7 @@ def execute(task: dict, agent: dict) -> dict:
             cmd_str = output[6:].strip()
             result_msg = handle_admin(cmd_str, requester_id, work_dir)
             print(f"[{ts()}] [{agent.get('name','URVAN')}] ADMIN: {result_msg[:80]}")
-            room_name = LINEWORKS_ROOM or None
-            if not room_name and requester_id:
-                room_map_path = Path(work_dir) / "lineworks-room-map.json"
-                if room_map_path.exists():
-                    try:
-                        room_map = json.loads(room_map_path.read_text(encoding="utf-8"))
-                        room_name = room_map.get(requester_id)
-                    except Exception:
-                        pass
+            room_name = _resolve_room(prompt, requester_id, work_dir) or None
             if room_name:
                 tmp_prefix = requester_id[:8] if requester_id else "admin"
                 tmp = Path(work_dir) / f"_lw_admin_{tmp_prefix}.txt"
@@ -372,15 +394,7 @@ def execute(task: dict, agent: dict) -> dict:
 
         # 完了後に LINE WORKS ルームへ通知
         if output:
-            room_name = LINEWORKS_ROOM or None
-            if not room_name and requester_id:
-                room_map_path = Path(work_dir) / "lineworks-room-map.json"
-                if room_map_path.exists():
-                    try:
-                        room_map = json.loads(room_map_path.read_text(encoding="utf-8"))
-                        room_name = room_map.get(requester_id)
-                    except Exception:
-                        pass
+            room_name = _resolve_room(prompt, requester_id, work_dir) or None
             if room_name:
                 tmp = Path(work_dir) / f"_lw_notify_{requester_id[:8]}.txt"
                 dept = agent.get("role", "")
@@ -453,14 +467,16 @@ def execute(task: dict, agent: dict) -> dict:
         if platform.system() == "Windows":
             os.system("title ELVIN")
         output = result.stdout.strip()[:2000] if result.stdout else ""
-        if output and LINEWORKS_ROOM:
+        lm_req_id = p.get("requester_id", "")
+        lm_room = _resolve_room(p.get("text", ""), lm_req_id, WORK_DIR) or None
+        if output and lm_room:
             import uuid as _uuid
             tmp = Path(WORK_DIR) / f"_lw_line_{_uuid.uuid4().hex[:8]}.txt"
             try:
                 tmp.write_text(output, encoding="utf-8")
                 subprocess.run(
                     ["python", str(Path(WORK_DIR) / "lineworks_send.py"),
-                     LINEWORKS_ROOM, str(tmp), "--headless"],
+                     lm_room, str(tmp), "--headless"],
                     timeout=120, cwd=WORK_DIR, capture_output=True,
                     encoding="utf-8", errors="replace",
                 )
