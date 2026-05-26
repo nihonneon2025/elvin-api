@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- 背景 -->
+  <rect width="512" height="512" rx="100" fill="#1a1a2e"/>
+  <!-- 吹き出し型チャットアイコン -->
+  <rect x="80" y="120" width="352" height="240" rx="40" fill="#4a90d9"/>
+  <polygon points="140,360 100,420 200,360" fill="#4a90d9"/>
+  <!-- E の文字 -->
+  <text x="256" y="285"
+    font-family="Arial, sans-serif"
+    font-weight="900"
+    font-size="140"
+    fill="#ffffff"
+    text-anchor="middle"
+    dominant-baseline="middle">E</text>
+</svg>

@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from contextlib import contextmanager
 from functools import wraps
 
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request, send_file, send_from_directory
 
 app = Flask(__name__)
 
@@ -1234,6 +1234,22 @@ def recent_tasks():
             ).fetchall()
 
     return jsonify([dict(r) for r in rows])
+
+
+# ── ELVIN CHAT 静的ファイル配信 ──────────────────────────────────────────
+
+CHAT_DIR = os.path.join(os.path.dirname(__file__), "chat")
+
+
+@app.route("/chat/")
+@app.route("/chat")
+def chat_index():
+    return send_from_directory(CHAT_DIR, "index.html")
+
+
+@app.route("/chat/<path:filename>")
+def chat_static(filename):
+    return send_from_directory(CHAT_DIR, filename)
 
 
 # ── 起動 ─────────────────────────────────────────────────────────────────

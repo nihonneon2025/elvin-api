@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="description" content="ELVIN CHAT - AI業務アシスタント">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ELVIN CHAT">
+  <title>ELVIN CHAT</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 名前入力モーダル（初回のみ） -->
+<div id="name-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="name-modal-title">
+  <div id="name-modal-inner">
+    <h2 id="name-modal-title">ELVIN CHAT</h2>
+    <p>最初にお名前を入力してください。<br>次回から自動で入力されます。</p>
+    <input
+      id="name-input"
+      type="text"
+      placeholder="例：田中"
+      maxlength="20"
+      autocomplete="name"
+    >
+    <button id="name-submit" type="button">はじめる</button>
+  </div>
+</div>
+
+<!-- メインアプリ -->
+<div id="app">
+
+  <!-- ヘッダー -->
+  <header id="header">
+    <div class="logo">ELVIN</div>
+    <div class="agent-badge">
+      <span class="dot"></span>
+      <span id="agent-badge-name">読込中...</span>
+    </div>
+    <div id="agent-select-wrap">
+      <select id="agent-select" aria-label="担当AIを選択"></select>
+    </div>
+  </header>
+
+  <!-- エラーバナー -->
+  <div id="error-banner" role="alert"></div>
+
+  <!-- チャットエリア -->
+  <main id="chat-area" aria-live="polite" aria-label="チャット履歴">
+
+    <!-- 空状態 -->
+    <div id="empty-state">
+      <div class="icon">💬</div>
+      <p>メッセージを送ると<br>AIが作業を開始します</p>
+    </div>
+
+    <!-- タイピングインジケーター -->
+    <div id="typing-indicator" aria-label="AI作業中">
+      <div class="spinner"></div>
+      <span id="typing-label" class="typing-label">AIが作業中...</span>
+      <div class="dots">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- 入力エリア -->
+  <div id="input-area">
+    <div id="input-row">
+      <textarea
+        id="message-input"
+        placeholder="業務指示を入力（Enterで送信 / Shift+Enterで改行）"
+        rows="1"
+        aria-label="メッセージ入力"
+        maxlength="2000"
+      ></textarea>
+      <button id="send-btn" type="button" aria-label="送信">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<script src="app.js"></script>
+
+<!-- Service Worker 登録 -->
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+      .catch(e => console.warn('SW registration failed:', e));
+  }
+</script>
+
+</body>
+</html>
