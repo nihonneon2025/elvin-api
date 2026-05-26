@@ -751,16 +751,23 @@ async function loadClients() {
 
 function renderClientCard(c) {
   const suspended = (c.status === 'suspended');
+  const mgrSuspended = (c.manager_status === 'suspended');
   const online = !suspended && c.last_seen && (Date.now() - new Date(c.last_seen).getTime() < 60000);
   const ls = c.last_seen ? fmtTime(c.last_seen) : '未接続';
 
   let statusBadge;
-  if (suspended) statusBadge = '<span class="badge badge-orange">停止中</span>';
-  else if (online) statusBadge = '<span class="badge badge-green">オンライン</span>';
-  else statusBadge = '<span class="badge badge-gray">オフライン</span>';
+  if (suspended) statusBadge = '<span class="badge badge-orange">AI停止中</span>';
+  else if (online) statusBadge = '<span class="badge badge-green">AIオンライン</span>';
+  else statusBadge = '<span class="badge badge-gray">AIオフライン</span>';
 
-  const toggleLabel = suspended ? '再開' : '停止';
+  const mgrBadge = mgrSuspended
+    ? '<span class="badge badge-orange">MANAGER停止中</span>'
+    : '<span class="badge badge-green">MANAGER稼働中</span>';
+
+  const toggleLabel = suspended ? 'AI再開' : 'AI停止';
   const toggleCls = suspended ? 'btn-success' : 'btn-danger';
+  const mgrToggleLabel = mgrSuspended ? 'MANAGER再開' : 'MANAGER停止';
+  const mgrToggleCls = mgrSuspended ? 'btn-success' : 'btn-warning';
 
   const agents = c.agents.map(a => `
     <div class="agent-card">
@@ -789,11 +796,13 @@ function renderClientCard(c) {
         <div class="card-title">${esc(c.name)}</div>
         <div style="font-size:11px;color:#64748b;margin-top:3px">ID: ${esc(c.id)} &nbsp;|&nbsp; 最終接続: ${ls}</div>
       </div>
-      <div class="flex-center" style="gap:8px">
+      <div class="flex-center" style="gap:8px;flex-wrap:wrap">
         ${statusBadge}
+        ${mgrBadge}
         <button class="btn btn-ghost btn-sm" onclick="showUsageModal('${esc(c.id)}','${esc(c.name)}')">利用状況</button>
         <button class="btn btn-ghost btn-sm" onclick="showTokenModal('${esc(c.id)}')">トークン</button>
         <button class="btn btn-sm ${toggleCls}" onclick="toggleClientStatus('${esc(c.id)}','${esc(c.status || 'active')}','${esc(c.name)}')">${toggleLabel}</button>
+        <button class="btn btn-sm ${mgrToggleCls}" onclick="toggleManagerStatus('${esc(c.id)}','${esc(c.manager_status || 'active')}','${esc(c.name)}')">${mgrToggleLabel}</button>
       </div>
     </div>
     <div class="agent-list">${agents || '<div class="text-muted text-sm" style="padding:8px">エージェントなし</div>'}</div>
@@ -825,12 +834,36 @@ function showConfirm({icon, title, msg, okLabel, okClass, onOk}) {
   overlay.classList.add('show');
 }
 
+async function toggleManagerStatus(clientId, currentStatus, clientName) {
+  const newStatus = currentStatus === 'suspended' ? 'active' : 'suspended';
+  const isSuspend = newStatus === 'suspended';
+  showConfirm({
+    icon: isSuspend ? '🟡' : '🟢',
+    title: isSuspend ? `「${clientName}」のMANAGERを停止しますか？` : `「${clientName}」のMANAGERを再開しますか？`,
+    msg: isSuspend
+      ? '業務管理システムへのアクセスが停止されます。AIは引き続き動作します。'
+      : '業務管理システムへのアクセスが再開されます。',
+    okLabel: isSuspend ? '停止する' : '再開する',
+    okClass: isSuspend ? 'btn-warning' : 'btn-success',
+    onOk: async () => {
+      try {
+        await api('PATCH', `/api/v1/clients/${clientId}/manager_status`, {status: newStatus});
+        toast(isSuspend ? 'MANAGERを停止しました' : 'MANAGERを再開しました');
+        loadClients();
+        loadDashboard();
+      } catch(e) {
+        toast('エラー: ' + e.message, true);
+      }
+    }
+  });
+}
+
 async function toggleClientStatus(clientId, currentStatus, clientName) {
   const newStatus = currentStatus === 'suspended' ? 'active' : 'suspended';
   const isSuspend = newStatus === 'suspended';
   showConfirm({
     icon: isSuspend ? '🔴' : '🟢',
-    title: isSuspend ? `「${clientName}」を停止しますか？` : `「${clientName}」を再開しますか？`,
+    title: isSuspend ? `「${clientName}」のAIを停止しますか？` : `「${clientName}」のAIを再開しますか？`,
     msg: isSuspend
       ? '停止するとAIがすべてのタスクを受け取らなくなります。データは消えません。'
       : '再開するとAIがタスクを受け取り始めます。',
@@ -839,7 +872,7 @@ async function toggleClientStatus(clientId, currentStatus, clientName) {
     onOk: async () => {
       try {
         await api('PATCH', `/api/v1/clients/${clientId}/status`, {status: newStatus});
-        toast(isSuspend ? '停止しました' : '再開しました');
+        toast(isSuspend ? 'AIを停止しました' : 'AIを再開しました');
         loadClients();
         loadDashboard();
       } catch(e) {

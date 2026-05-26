@@ -125,6 +125,7 @@ def init_db():
         # 既存DBへのカラム追加（冪等）
         for sql in [
             "ALTER TABLE clients ADD COLUMN status TEXT DEFAULT 'active'",
+            "ALTER TABLE clients ADD COLUMN manager_status TEXT DEFAULT 'active'",
             "ALTER TABLE tasks ADD COLUMN tokens_in INTEGER DEFAULT 0",
             "ALTER TABLE tasks ADD COLUMN tokens_out INTEGER DEFAULT 0",
         ]:
@@ -222,7 +223,7 @@ def list_clients():
 @app.route("/api/v1/clients/<client_id>/status", methods=["PATCH"])
 @require_daemon
 def update_client_status(client_id):
-    """顧客の停止・再開"""
+    """AI（daemon）の停止・再開"""
     data = request.get_json(force=True)
     new_status = data.get("status")
     if new_status not in ("active", "suspended"):
@@ -234,6 +235,23 @@ def update_client_status(client_id):
         if cur.rowcount == 0:
             return jsonify({"error": "client not found"}), 404
     return jsonify({"ok": True, "client_id": client_id, "status": new_status})
+
+
+@app.route("/api/v1/clients/<client_id>/manager_status", methods=["PATCH"])
+@require_daemon
+def update_manager_status(client_id):
+    """ELVIN MANAGER（業務システム）の停止・再開"""
+    data = request.get_json(force=True)
+    new_status = data.get("status")
+    if new_status not in ("active", "suspended"):
+        return jsonify({"error": "status must be active or suspended"}), 400
+    with get_db() as conn:
+        cur = conn.execute(
+            "UPDATE clients SET manager_status = ? WHERE id = ?", (new_status, client_id)
+        )
+        if cur.rowcount == 0:
+            return jsonify({"error": "client not found"}), 404
+    return jsonify({"ok": True, "client_id": client_id, "manager_status": new_status})
 
 
 @app.route("/api/v1/clients/<client_id>/usage", methods=["GET"])
@@ -815,7 +833,7 @@ def line_webhook():
 def status():
     with get_db() as conn:
         clients = conn.execute(
-            "SELECT id, name, status, last_seen FROM clients ORDER BY last_seen DESC"
+            "SELECT id, name, status, manager_status, last_seen FROM clients ORDER BY last_seen DESC"
         ).fetchall()
         agents = conn.execute(
             "SELECT id, client_id, name, role, enabled, last_seen FROM agents ORDER BY client_id, created_at"
@@ -845,6 +863,7 @@ def status():
             "id": c["id"],
             "name": c["name"],
             "status": c["status"] or "active",
+            "manager_status": c["manager_status"] or "active",
             "last_seen": c["last_seen"],
             "agents": agent_map.get(c["id"], []),
         }
@@ -856,13 +875,13 @@ def status():
 
 @app.route("/api/v1/license/check", methods=["GET"])
 def license_check():
-    """ELVIN MANAGERからのライセンス確認。client_tokenで認証し、停止状態を返す。"""
+    """ELVIN MANAGERからのライセンス確認。manager_statusで制御。"""
     token = client_token_from_request()
     client = get_client_by_token(token) if token else None
     if not client:
         return jsonify({"active": False, "reason": "unknown token"}), 402
-    status = client["status"] or "active"
-    if status == "suspended":
+    manager_status = client["manager_status"] if "manager_status" in client.keys() else "active"
+    if (manager_status or "active") == "suspended":
         return jsonify({"active": False, "reason": "suspended"}), 402
     return jsonify({"active": True, "name": client["name"]}), 200
 
