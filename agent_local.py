@@ -43,7 +43,7 @@ _config_path = _base_dir / "elvin_config.json"
 _cfg: dict = {}
 if _config_path.exists():
     try:
-        _cfg = json.loads(_config_path.read_text(encoding="utf-8"))
+        _cfg = json.loads(_config_path.read_text(encoding="utf-8-sig"))
     except Exception as e:
         print(f"[WARN] elvin_config.json 読み込みエラー: {e}")
 
