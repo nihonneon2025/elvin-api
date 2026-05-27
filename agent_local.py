@@ -299,7 +299,7 @@ def execute(task: dict, agent: dict) -> dict:
                 room_name_hint = _resolve_room(prompt, _req_id_hint, WORK_DIR)
                 local_hint = (
                     f"\n\n【作業環境】\n"
-                    f"・スクリプトの置き場所（作業基点）: {work_dir}\n"
+                    f"・スクリプトの置き場所（作業基点）: {WORK_DIR}\n"
                     f"・作業完了後は「何を・どこに・どんな名前で作ったか」を日本語3行以内で出力すること"
                 )
                 room_prefix = f"返信先LINE WORKSルーム名: {room_name_hint}\n\n" if room_name_hint else ""
