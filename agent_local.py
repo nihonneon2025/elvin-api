@@ -313,9 +313,12 @@ def execute(task: dict, agent: dict) -> dict:
             elif system_prompt:
                 _req_id_hint = p.get("requester_id", "")
                 room_name_hint = _resolve_room(prompt, _req_id_hint, WORK_DIR)
+                _desktop = str(Path(WORK_DIR).parent)
                 local_hint = (
                     f"\n\n【作業環境】\n"
                     f"・スクリプトの置き場所（作業基点）: {WORK_DIR}\n"
+                    f"・Windowsデスクトップのパス: {_desktop}\n"
+                    f"・「デスクトップ」と指定された場合は必ず {_desktop} 配下のローカルフォルダに保存する（GoogleドライブなどクラウドストレージへのアップロードはNG）\n"
                     f"・作業完了後は「何を・どこに・どんな名前で作ったか」を改行なしの1行テキストで出力すること"
                 )
                 room_prefix = f"返信先LINE WORKSルーム名: {room_name_hint}\n\n" if room_name_hint else ""
@@ -419,7 +422,11 @@ def execute(task: dict, agent: dict) -> dict:
                 label = f"{dept} {name}".strip() if dept else name
                 # 改行を全角スペースで置換して1行メッセージにする
                 summary = output.replace("\r\n", "　").replace("\r", "　").replace("\n", "　").strip()
-                notify_body = f"【{label}】完了: {summary}"
+                # Claudeの出力が既に「完了:」で始まる場合は二重にしない
+                if summary.startswith("完了:") or summary.startswith("完了："):
+                    notify_body = f"【{label}】{summary}"
+                else:
+                    notify_body = f"【{label}】完了: {summary}"
                 try:
                     tmp.write_text(notify_body, encoding="utf-8")
                     lw_result = subprocess.run(
