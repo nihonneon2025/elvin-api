@@ -314,12 +314,19 @@ def execute(task: dict, agent: dict) -> dict:
                 _req_id_hint = p.get("requester_id", "")
                 room_name_hint = _resolve_room(prompt, _req_id_hint, WORK_DIR)
                 _desktop = str(Path(WORK_DIR).parent)
+                _lw_script = str(Path(WORK_DIR) / "lineworks_send.py")
+                _room_for_hint = room_name_hint or "[LINE WORKSルーム名]"
                 local_hint = (
                     f"\n\n【作業環境】\n"
                     f"・スクリプトの置き場所（作業基点）: {WORK_DIR}\n"
                     f"・Windowsデスクトップのパス: {_desktop}\n"
-                    f"・「デスクトップ」と指定された場合は必ず {_desktop} 配下のローカルフォルダに保存する（GoogleドライブなどクラウドストレージへのアップロードはNG）\n"
-                    f"・作業完了後は「何を・どこに・どんな名前で作ったか」を改行なしの1行テキストで出力すること"
+                    f"・「デスクトップ」と指定された場合は必ず {_desktop} 配下のローカルフォルダに保存する（クラウドストレージ禁止）\n"
+                    f"\n【LINE WORKSへのファイル送信 — 必須】\n"
+                    f"作業でファイルを作成したら、必ず以下のコマンドで添付送信すること:\n"
+                    f"  python \"{_lw_script}\" \"{_room_for_hint}\" \"[作成したファイルの絶対パス]\" --file --headless\n"
+                    f"・PDF/Excel/txtなど用途に合ったファイル形式のまま送る\n"
+                    f"・ファイルID・URLをテキストで送るのは禁止（実ファイルを送ること）\n"
+                    f"\n作業完了後は「何を・どこに・どんな名前で作ったか」を改行なしの1行テキストで出力すること"
                 )
                 room_prefix = f"返信先LINE WORKSルーム名: {room_name_hint}\n\n" if room_name_hint else ""
                 full_prompt = f"{system_prompt}{local_hint}\n\n---\n\n{room_prefix}{prompt}"
