@@ -154,6 +154,57 @@ tr:hover td{background:#f7f9fc}
 
 /* ── Setup Form ──────────────────────────────── */
 .setup-form{background:#fff;border:1px solid #dde1e9;border-radius:4px;padding:28px;max-width:680px;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+
+/* ── Wizard Step Indicator ───────────────────── */
+.wizard-steps{display:flex;align-items:center;max-width:680px;margin-bottom:28px;gap:0}
+.wizard-step{display:flex;align-items:center;gap:10px;flex:1}
+.wizard-step-num{
+  width:32px;height:32px;border-radius:50%;border:2px solid #dde1e9;
+  background:#fff;color:#8a93a6;font-size:13px;font-weight:700;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s
+}
+.wizard-step.active .wizard-step-num{background:#1a2d5a;border-color:#1a2d5a;color:#fff}
+.wizard-step.done .wizard-step-num{background:#1a7a4a;border-color:#1a7a4a;color:#fff}
+.wizard-step-label{font-size:12px;font-weight:600;color:#8a93a6;white-space:nowrap}
+.wizard-step.active .wizard-step-label{color:#1a2d5a}
+.wizard-step.done .wizard-step-label{color:#1a7a4a}
+.wizard-connector{flex:1;height:2px;background:#dde1e9;margin:0 8px;min-width:20px;transition:background .2s}
+.wizard-connector.done{background:#1a7a4a}
+
+/* ── Token Display ───────────────────────────── */
+.token-display{background:#f0f6ff;border:2px solid #b8d0f0;border-radius:4px;padding:20px;margin:16px 0}
+.token-display-title{font-size:11px;font-weight:700;color:#1a4a9a;letter-spacing:.8px;text-transform:uppercase;margin-bottom:12px}
+.token-big{
+  font-family:'Courier New',monospace;font-size:15px;font-weight:700;color:#1a2d5a;
+  word-break:break-all;background:#fff;border:1px solid #dde1e9;border-radius:3px;
+  padding:10px 14px;margin-bottom:6px;letter-spacing:.3px
+}
+.token-big-label{font-size:10px;color:#8a93a6;font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px}
+
+/* ── Config Sample Box ───────────────────────── */
+.config-sample-wrap{margin-top:20px}
+.config-sample-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.config-sample-title{font-size:11px;font-weight:700;color:#5a6680;letter-spacing:.8px;text-transform:uppercase}
+.config-sample-textarea{
+  width:100%;padding:12px 14px;background:#1a2035;color:#a8d8a8;
+  border:1px solid #2d3a52;border-radius:3px;font-family:'Courier New',monospace;
+  font-size:12px;line-height:1.7;resize:vertical;min-height:180px;outline:none
+}
+
+/* ── Poll Status ─────────────────────────────── */
+.poll-status{
+  display:flex;align-items:center;gap:12px;padding:16px 20px;
+  border:1px solid #dde1e9;border-radius:4px;background:#f7f8fa;margin:16px 0
+}
+.poll-status-icon{font-size:24px;flex-shrink:0}
+.poll-status-text{font-size:14px;font-weight:600;color:#5a6680}
+.poll-status-sub{font-size:11px;color:#a0a8b8;margin-top:2px}
+.poll-status.connected{border-color:#1a7a4a;background:#f0faf5}
+.poll-status.connected .poll-status-text{color:#1a7a4a}
+
+/* ── Stage Panel ─────────────────────────────── */
+.wizard-stage{display:none}
+.wizard-stage.active{display:block}
 .form-group{margin-bottom:18px}
 label{display:block;font-size:11px;font-weight:700;color:#5a6680;margin-bottom:6px;letter-spacing:.8px;text-transform:uppercase}
 input[type=text],input[type=password],textarea,select{
@@ -292,6 +343,10 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
   .log-controls select{flex:1;min-width:120px}
   .setup-form{padding:18px;max-width:100%}
   .agent-row-fields{grid-template-columns:1fr}
+  .wizard-steps{max-width:100%}
+  .wizard-step-label{font-size:10px}
+  .token-big{font-size:12px}
+  .config-sample-textarea{font-size:11px}
   .modal{width:96vw;max-height:88vh}
   .confirm-box{width:92%;padding:24px 18px}
   .login-box{width:90%;max-width:340px;padding:36px 24px}
@@ -421,28 +476,115 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
       <div class="page-header">
         <div class="page-title">新規顧客セットアップ</div>
       </div>
-      <div class="setup-form">
-        <div class="form-group">
-          <label>会社名 *</label>
-          <input type="text" id="setup-name" placeholder="例: 株式会社サンプル">
+
+      <!-- Step Indicator -->
+      <div class="wizard-steps" id="wizard-steps">
+        <div class="wizard-step active" id="wstep-1">
+          <div class="wizard-step-num">1</div>
+          <div class="wizard-step-label">顧客登録</div>
         </div>
-        <div class="form-group">
-          <label>顧客ID <span style="font-weight:400;text-transform:none;color:#475569">（空白で自動生成）</span></label>
-          <input type="text" id="setup-clientid" placeholder="例: sample_001">
-          <div class="form-hint">英数字・アンダースコアのみ推奨。空白の場合は自動で生成されます。</div>
+        <div class="wizard-connector" id="wconn-1"></div>
+        <div class="wizard-step" id="wstep-2">
+          <div class="wizard-step-num">2</div>
+          <div class="wizard-step-label">接続確認 &amp; エージェント追加</div>
         </div>
-        <hr class="divider">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <label style="margin-bottom:0">エージェント</label>
-          <button type="button" class="btn btn-ghost btn-sm" onclick="addAgentRow()">＋ エージェントを追加</button>
+      </div>
+
+      <!-- Stage 1: 顧客登録 -->
+      <div class="wizard-stage active" id="wiz-stage-1">
+        <div class="setup-form">
+          <div class="form-group">
+            <label>会社名 <span style="color:#c0392b">*</span></label>
+            <input type="text" id="setup-name" placeholder="例: 株式会社サンプル">
+          </div>
+          <div class="form-group">
+            <label>顧客ID <span style="font-weight:400;text-transform:none;color:#8a93a6">（空白で自動生成）</span></label>
+            <input type="text" id="setup-clientid" placeholder="例: sample_001">
+            <div class="form-hint">英数字・アンダースコアのみ推奨。空白の場合は自動で生成されます。</div>
+          </div>
+          <button class="btn btn-primary" onclick="doWizardSetup()" id="setup-btn" style="margin-top:8px">
+            登録して発行
+          </button>
         </div>
-        <div id="agent-rows"></div>
-        <div class="form-hint" style="margin-bottom:18px">
-          エージェントは後から「顧客管理」タブでも追加・編集できます。
-          LINEのグループIDとプロンプトは登録後に設定することを推奨します。
+      </div>
+
+      <!-- Stage 2: 接続確認 & エージェント追加 -->
+      <div class="wizard-stage" id="wiz-stage-2">
+        <div class="setup-form" style="max-width:680px">
+
+          <!-- 発行済みトークン表示 -->
+          <div class="token-display" id="wiz-token-display">
+            <div class="token-display-title">発行済み認証情報</div>
+            <div class="token-big-label">顧客ID</div>
+            <div class="token-big" id="wiz-client-id">—</div>
+            <div style="display:flex;gap:8px;margin-bottom:12px">
+              <button class="copy-btn" onclick="copyText(document.getElementById('wiz-client-id').textContent)">コピー</button>
+            </div>
+            <div class="token-big-label">クライアントトークン</div>
+            <div class="token-big" id="wiz-token">—</div>
+            <div style="display:flex;gap:8px">
+              <button class="copy-btn" onclick="copyText(document.getElementById('wiz-token').textContent)">コピー</button>
+            </div>
+          </div>
+
+          <!-- elvin_config.json サンプル -->
+          <div class="config-sample-wrap">
+            <div class="config-sample-header">
+              <div class="config-sample-title">elvin_config.json（デーモン設定ファイル）</div>
+              <button class="copy-btn" onclick="copyText(document.getElementById('wiz-config-sample').value)" style="font-size:12px;padding:5px 12px">全コピー</button>
+            </div>
+            <textarea class="config-sample-textarea" id="wiz-config-sample" readonly></textarea>
+          </div>
+
+          <hr class="divider" style="margin:24px 0">
+
+          <!-- 接続待ちポーリング -->
+          <div style="margin-bottom:8px">
+            <div style="font-size:13px;font-weight:700;color:#1a2035;margin-bottom:6px">Step 2: 接続確認</div>
+            <div style="font-size:12px;color:#8a93a6;margin-bottom:14px">
+              上記の elvin_config.json を顧客PCに配置してデーモンを起動したら「接続を待つ」を押してください。
+            </div>
+            <div id="wiz-poll-status" class="poll-status" style="display:none">
+              <div class="poll-status-icon" id="wiz-poll-icon"><div class="spinner"></div></div>
+              <div>
+                <div class="poll-status-text" id="wiz-poll-text">デーモン起動を待っています...</div>
+                <div class="poll-status-sub" id="wiz-poll-sub">5秒ごとに自動確認中</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <button class="btn btn-primary" onclick="startWizardPoll()" id="wiz-poll-btn">接続を待つ</button>
+              <button class="btn btn-ghost" onclick="stopWizardPoll()" id="wiz-stop-btn" style="display:none">停止</button>
+            </div>
+          </div>
+
+          <!-- エージェント追加フォーム（接続確認後に表示） -->
+          <div id="wiz-agent-section" style="display:none;margin-top:24px">
+            <hr class="divider">
+            <div style="font-size:13px;font-weight:700;color:#1a2035;margin-bottom:6px">エージェントを追加</div>
+            <div style="font-size:12px;color:#8a93a6;margin-bottom:16px">
+              顧客のAIエージェントを登録します。後から「顧客管理」タブでも追加・編集できます。
+            </div>
+            <div class="form-group">
+              <label>エージェント名 <span style="color:#c0392b">*</span></label>
+              <input type="text" id="wiz-agent-name" placeholder="例: 受付AI">
+            </div>
+            <div class="form-group">
+              <label>役割 <span style="font-weight:400;text-transform:none;color:#8a93a6">（任意）</span></label>
+              <input type="text" id="wiz-agent-role" placeholder="例: 問い合わせ対応">
+            </div>
+            <div class="form-group">
+              <label>system_prompt <span style="font-weight:400;text-transform:none;color:#8a93a6">（任意）</span></label>
+              <textarea id="wiz-agent-prompt" rows="6" placeholder="例: あなたは○○会社の受付AIです。丁寧に日本語でお答えください。"></textarea>
+              <div class="form-hint">後から「顧客管理」→「編集」で変更できます。</div>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <button class="btn btn-primary" onclick="doWizardAddAgent()" id="wiz-add-agent-btn">エージェントを追加</button>
+              <button class="btn btn-ghost" onclick="wizardFinish()">スキップして完了</button>
+            </div>
+            <div id="wiz-agent-result" style="margin-top:12px"></div>
+          </div>
+
         </div>
-        <button class="btn btn-primary" onclick="doSetup()" id="setup-btn">セットアップ実行</button>
-        <div id="setup-result"></div>
       </div>
     </div>
 
@@ -625,7 +767,6 @@ const BASE = '';
 let SECRET = 'elvin2026';
 let STATUS_DATA = [];
 let EDIT_AGENT_ID = '';
-let agentRows = [];
 
 // ── Auth ────────────────────────────────────────
 async function doLogin() {
@@ -932,58 +1073,160 @@ async function saveAgent() {
   } catch(e) { toast('保存エラー: ' + e.message, true); }
 }
 
-// ── Setup ────────────────────────────────────────
-function addAgentRow() { agentRows.push({ name: '', role: '' }); renderAgentRows(); }
-function removeAgentRow(i) { agentRows.splice(i, 1); renderAgentRows(); }
-function renderAgentRows() {
-  const container = document.getElementById('agent-rows');
-  if (!agentRows.length) { container.innerHTML = ''; return; }
-  container.innerHTML = agentRows.map((ag, i) => `
-    <div class="agent-row">
-      <div class="agent-row-header">
-        <div class="agent-row-title">エージェント ${i + 1}</div>
-        <button type="button" class="btn btn-ghost btn-sm" onclick="removeAgentRow(${i})" style="color:#ef4444;border-color:#ef4444">削除</button>
-      </div>
-      <div class="agent-row-fields">
-        <div class="form-group" style="margin-bottom:0"><label>名前 *</label>
-          <input type="text" placeholder="例: 受付AI" value="${esc(ag.name)}" oninput="agentRows[${i}].name=this.value"></div>
-        <div class="form-group" style="margin-bottom:0"><label>役割 <span style="font-weight:400;text-transform:none;color:#475569">（任意）</span></label>
-          <input type="text" placeholder="例: 問い合わせ対応" value="${esc(ag.role)}" oninput="agentRows[${i}].role=this.value"></div>
-      </div>
-    </div>`).join('');
+// ── Setup Wizard ─────────────────────────────────
+let agentRows = [];
+let _wizClientId = '';
+let _wizToken = '';
+let _wizPollTimer = null;
+
+function _wizSetStep(step) {
+  const s1 = document.getElementById('wstep-1');
+  const s2 = document.getElementById('wstep-2');
+  const conn = document.getElementById('wconn-1');
+  if (step === 1) {
+    s1.className = 'wizard-step active'; s2.className = 'wizard-step'; conn.className = 'wizard-connector';
+  } else {
+    s1.className = 'wizard-step done'; s2.className = 'wizard-step active'; conn.className = 'wizard-connector done';
+  }
+  document.getElementById('wiz-stage-1').className = 'wizard-stage' + (step === 1 ? ' active' : '');
+  document.getElementById('wiz-stage-2').className = 'wizard-stage' + (step === 2 ? ' active' : '');
 }
 
-async function doSetup() {
+async function doWizardSetup() {
   const name = document.getElementById('setup-name').value.trim();
   if (!name) { toast('会社名を入力してください', true); return; }
   const clientId = document.getElementById('setup-clientid').value.trim();
-  for (let i = 0; i < agentRows.length; i++) {
-    if (!agentRows[i].name.trim()) { toast(`エージェント ${i+1} の名前を入力してください`, true); return; }
-  }
   const btn = document.getElementById('setup-btn');
-  btn.textContent = '処理中...'; btn.disabled = true;
-  document.getElementById('setup-result').innerHTML = '';
+  btn.textContent = '登録中...'; btn.disabled = true;
   try {
     const data = await api('POST', '/api/v1/setup/client', {
-      name, client_id: clientId || undefined,
-      agents: agentRows.map(ag => ({ name: ag.name.trim(), role: ag.role.trim() })),
+      name,
+      client_id: clientId || undefined,
+      agents: [],
     });
-    const agHtml = data.agents.length > 0
-      ? data.agents.map(a => `<div class="token-row"><div class="token-label">${esc(a.name)}</div><div class="token-value">${esc(a.agent_id)}</div><button class="copy-btn" onclick="copyText('${esc(a.agent_id)}')">コピー</button></div>`).join('')
-      : '<div style="color:#64748b;font-size:12px;padding:8px 0">エージェントなし</div>';
-    document.getElementById('setup-result').innerHTML = `
-      <div class="result-box">
-        <div class="result-title">✓ セットアップ完了</div>
-        <div class="token-row"><div class="token-label">顧客ID</div><div class="token-value">${esc(data.client_id)}</div><button class="copy-btn" onclick="copyText('${esc(data.client_id)}')">コピー</button></div>
-        <div class="token-row"><div class="token-label">トークン</div><div class="token-value">${esc(data.token)}</div><button class="copy-btn" onclick="copyText('${esc(data.token)}')">コピー</button></div>
-        <div class="token-row" style="background:#f0f8ff;border-color:#b8d4f0"><div class="token-label">Webhook URL</div><div class="token-value" style="color:#1a4a9a">${esc('https://api.nihon-neon.jp/webhook/' + data.token)}</div><button class="copy-btn" onclick="copyText('${esc('https://api.nihon-neon.jp/webhook/' + data.token)}')">コピー</button></div>
-        ${data.agents.length > 0 ? '<div style="margin:14px 0 8px;font-size:11px;font-weight:600;color:#94a3b8;letter-spacing:1px">作成されたエージェント</div>' : ''}${agHtml}
+    _wizClientId = data.client_id;
+    _wizToken = data.token;
+    document.getElementById('wiz-client-id').textContent = data.client_id;
+    document.getElementById('wiz-token').textContent = data.token;
+    const configJson = JSON.stringify({
+      "vps_url": "https://api.nihon-neon.jp",
+      "client_token": data.token,
+      "poll_interval": 5,
+      "work_dir": "C:\\Users\\Administrator\\Desktop\\AI版AGO",
+      "lineworks_room": "AI事業"
+    }, null, 2);
+    document.getElementById('wiz-config-sample').value = configJson;
+    _wizSetStep(2);
+    toast('顧客を登録しました');
+  } catch(e) {
+    toast('登録エラー: ' + e.message, true);
+  } finally {
+    btn.textContent = '登録して発行'; btn.disabled = false;
+  }
+}
+
+function startWizardPoll() {
+  if (_wizPollTimer) return;
+  const pollStatus = document.getElementById('wiz-poll-status');
+  pollStatus.style.display = 'flex';
+  pollStatus.className = 'poll-status';
+  document.getElementById('wiz-poll-icon').innerHTML = '<div class="spinner"></div>';
+  document.getElementById('wiz-poll-text').textContent = 'デーモン起動を待っています...';
+  document.getElementById('wiz-poll-sub').textContent = '5秒ごとに自動確認中';
+  document.getElementById('wiz-poll-btn').style.display = 'none';
+  document.getElementById('wiz-stop-btn').style.display = '';
+  _wizPollTimer = setInterval(_wizCheckConnection, 5000);
+  _wizCheckConnection();
+}
+
+function stopWizardPoll() {
+  if (_wizPollTimer) { clearInterval(_wizPollTimer); _wizPollTimer = null; }
+  document.getElementById('wiz-poll-btn').style.display = '';
+  document.getElementById('wiz-stop-btn').style.display = 'none';
+  document.getElementById('wiz-poll-sub').textContent = '停止しました';
+}
+
+async function _wizCheckConnection() {
+  try {
+    const data = await api('GET', '/api/v1/status');
+    const client = (data || []).find(c => c.id === _wizClientId);
+    if (client && client.last_seen) {
+      const diffSec = (Date.now() - new Date(client.last_seen).getTime()) / 1000;
+      if (diffSec < 60) {
+        clearInterval(_wizPollTimer); _wizPollTimer = null;
+        const pollStatus = document.getElementById('wiz-poll-status');
+        pollStatus.className = 'poll-status connected';
+        document.getElementById('wiz-poll-icon').textContent = '✅';
+        document.getElementById('wiz-poll-text').textContent = '接続確認！';
+        document.getElementById('wiz-poll-sub').textContent = 'デーモンが正常に接続されています';
+        document.getElementById('wiz-poll-btn').style.display = 'none';
+        document.getElementById('wiz-stop-btn').style.display = 'none';
+        document.getElementById('wiz-agent-section').style.display = 'block';
+        document.getElementById('wstep-2').className = 'wizard-step done';
+        toast('デーモン接続を確認しました');
+      }
+    }
+  } catch(e) { /* サイレントに続行 */ }
+}
+
+async function doWizardAddAgent() {
+  const name = document.getElementById('wiz-agent-name').value.trim();
+  if (!name) { toast('エージェント名を入力してください', true); return; }
+  const role = document.getElementById('wiz-agent-role').value.trim();
+  const system_prompt = document.getElementById('wiz-agent-prompt').value.trim();
+  const btn = document.getElementById('wiz-add-agent-btn');
+  btn.textContent = '追加中...'; btn.disabled = true;
+  try {
+    const result = await api('POST', `/api/v1/clients/${encodeURIComponent(_wizClientId)}/agents`, {
+      name, role, system_prompt
+    });
+    document.getElementById('wiz-agent-result').innerHTML = `
+      <div class="result-box" style="margin-top:0">
+        <div class="result-title">✓ エージェントを追加しました</div>
+        <div class="token-row">
+          <div class="token-label">エージェントID</div>
+          <div class="token-value">${esc(result.agent_id)}</div>
+          <button class="copy-btn" onclick="copyText('${esc(result.agent_id)}')">コピー</button>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="wizardAddAnother()">続けて追加</button>
+          <button class="btn btn-primary btn-sm" onclick="wizardFinish()">完了して顧客管理へ</button>
+        </div>
       </div>`;
-    document.getElementById('setup-name').value = '';
-    document.getElementById('setup-clientid').value = '';
-    agentRows = []; renderAgentRows();
-  } catch(e) { toast('セットアップエラー: ' + e.message, true); }
-  finally { btn.textContent = 'セットアップ実行'; btn.disabled = false; }
+    toast('エージェントを追加しました');
+  } catch(e) {
+    toast('エラー: ' + e.message, true);
+  } finally {
+    btn.textContent = 'エージェントを追加'; btn.disabled = false;
+  }
+}
+
+function wizardAddAnother() {
+  document.getElementById('wiz-agent-name').value = '';
+  document.getElementById('wiz-agent-role').value = '';
+  document.getElementById('wiz-agent-prompt').value = '';
+  document.getElementById('wiz-agent-result').innerHTML = '';
+}
+
+function wizardFinish() {
+  stopWizardPoll();
+  _wizClientId = ''; _wizToken = '';
+  document.getElementById('setup-name').value = '';
+  document.getElementById('setup-clientid').value = '';
+  document.getElementById('wiz-client-id').textContent = '—';
+  document.getElementById('wiz-token').textContent = '—';
+  document.getElementById('wiz-config-sample').value = '';
+  document.getElementById('wiz-poll-status').style.display = 'none';
+  document.getElementById('wiz-poll-btn').style.display = '';
+  document.getElementById('wiz-stop-btn').style.display = 'none';
+  document.getElementById('wiz-agent-section').style.display = 'none';
+  document.getElementById('wiz-agent-result').innerHTML = '';
+  document.getElementById('wiz-agent-name').value = '';
+  document.getElementById('wiz-agent-role').value = '';
+  document.getElementById('wiz-agent-prompt').value = '';
+  _wizSetStep(1);
+  const clientsNav = Array.from(document.querySelectorAll('.nav-item')).find(el => el.getAttribute('onclick') && el.getAttribute('onclick').includes("'clients'"));
+  showTab('clients', clientsNav);
 }
 
 // ── AI記憶管理 ────────────────────────────────────
