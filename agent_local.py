@@ -301,7 +301,6 @@ def execute(task: dict, agent: dict) -> dict:
                     f"\n\n【作業ルール（必須）】\n"
                     f"・作業フォルダ: {work_dir}\n"
                     f"・ファイルはすべてローカルの上記フォルダに保存すること。Googleドライブ・OneDrive等クラウド保存は絶対禁止\n"
-                    f"・LINE WORKSへの通知は自動で送られるので、自分でlineworks_send.pyを呼ばないこと\n"
                     f"・作業完了後は「何を・どこに・どんな名前で作ったか」を日本語3行以内で出力すること"
                 )
                 room_prefix = f"返信先LINE WORKSルーム名: {room_name_hint}\n\n" if room_name_hint else ""
