@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ELVIN ADMIN</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --sb-w:200px;--sb-bg:#1a3557;--sb-act:#245080;--sb-txt:#8facc6;
+  --bg:#f1f5f9;--surface:#fff;--card:#f8fafc;--border:#e2e8f0;
+  --primary:#4f46e5;--accent:#6366f1;--text:#0f172a;--muted:#64748b;
+  --green:#059669;--red:#dc2626;--yellow:#d97706;--blue:#2563eb;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);margin-left:var(--sb-w)}
+a{text-decoration:none}
+
+/* ── サイドバー ── */
+#sidebar{position:fixed;top:0;left:0;width:var(--sb-w);height:100vh;background:var(--sb-bg);display:flex;flex-direction:column;z-index:100;overflow-y:auto}
+.sb-logo{padding:20px 16px 14px;border-bottom:1px solid rgba(255,255,255,.1)}
+.sb-logo-a{font-size:20px;font-weight:900;color:#fff;letter-spacing:2px}
+.sb-logo-b{font-size:9px;font-weight:600;color:var(--sb-txt);letter-spacing:1.5px;margin-top:2px}
+.sb-logo-c{font-size:9px;color:rgba(255,255,255,.35);margin-top:3px}
+.sb-nav{padding:8px 0;flex:1}
+.sb-item{display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;background:none;border:none;border-left:3px solid transparent;color:var(--sb-txt);font-size:13px;font-weight:500;cursor:pointer;text-align:left;transition:all .15s;white-space:nowrap}
+.sb-item:hover{background:rgba(255,255,255,.07);color:#cde}
+.sb-item.active{background:var(--sb-act);color:#fff;border-left-color:#4da6ff}
+.sb-item svg{width:16px;height:16px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sb-section{padding:12px 14px 4px;font-size:10px;font-weight:700;color:rgba(255,255,255,.25);letter-spacing:1px;text-transform:uppercase}
+.sb-footer{padding:12px 14px;border-top:1px solid rgba(255,255,255,.1);font-size:11px;color:var(--sb-txt)}
+
+/* ── メインコンテンツ ── */
+#main{min-height:100vh}
+.view{display:none;padding:20px}
+.view.active{display:block}
+
+/* ── ヘッダー ── */
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.page-title{font-size:18px;font-weight:700;color:var(--text)}
+.page-sub{font-size:12px;color:var(--muted);margin-top:2px}
+
+/* ── カード ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:16px}
+.card-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.card-title{font-size:13px;font-weight:700;color:var(--text)}
+.card-body{padding:0}
+
+/* ── ボタン ── */
+.btn{border:none;border-radius:8px;padding:7px 14px;font-size:13px;cursor:pointer;font-weight:500;transition:opacity .15s}
+.btn:hover{opacity:.85}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-danger{background:var(--red);color:#fff}
+.btn-ghost{background:none;border:1px solid var(--border);color:var(--muted)}
+.btn-sm{padding:4px 10px;font-size:12px}
+
+/* ── インプット ── */
+input,textarea,select{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:13px;color:var(--text);width:100%;outline:none;font-family:inherit}
+input:focus,textarea:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(79,70,229,.1)}
+label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
+.form-row{margin-bottom:12px}
+.form-grid{display:grid;gap:10px}
+
+/* ── テーブル ── */
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);background:var(--card);border-bottom:1px solid var(--border)}
+.tbl td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:var(--card)}
+
+/* ── バッジ ── */
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-green{background:#d1fae5;color:#065f46}
+.badge-red{background:#fee2e2;color:#991b1b}
+.badge-gray{background:#f1f5f9;color:#475569}
+
+/* ── 統計カード ── */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.stat-num{font-size:24px;font-weight:800;color:var(--text)}
+.stat-label{font-size:11px;color:var(--muted);margin-top:2px}
+
+/* ── 会話気泡 ── */
+.bubble-user{background:var(--card);border:1px solid var(--border)}
+.bubble-ai{background:var(--surface);border:1px solid var(--border)}
+.bubble{border-radius:8px;padding:8px 10px;font-size:12px;color:var(--text);white-space:pre-wrap;word-break:break-word;margin-bottom:8px}
+.bubble-meta{font-size:10px;color:var(--muted);margin-bottom:3px}
+
+/* ── ロック画面 ── */
+#lock-screen{position:fixed;inset:0;background:#1a3557;display:flex;align-items:center;justify-content:center;z-index:999}
+.lock-box{background:#fff;border-radius:16px;padding:32px;width:320px;text-align:center}
+.lock-logo{font-size:24px;font-weight:900;color:#1a3557;letter-spacing:2px;margin-bottom:4px}
+.lock-sub{font-size:11px;color:var(--muted);margin-bottom:24px;letter-spacing:1px}
+.lock-box input{margin-bottom:12px;text-align:center;font-size:14px}
+.lock-err{font-size:12px;color:var(--red);margin-top:8px;min-height:18px}
+
+/* ── レスポンシブ ── */
+@media(max-width:767px){
+  body{margin-left:0}
+  #sidebar{transform:translateX(-100%);transition:transform .25s}
+  #sidebar.open{transform:translateX(0)}
+  #sb-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:99}
+  #sb-overlay.open{display:block}
+  #sb-toggle{display:flex;position:fixed;top:12px;left:12px;z-index:98;background:var(--sb-bg);color:#fff;border:none;border-radius:8px;width:38px;height:38px;align-items:center;justify-content:center;font-size:18px;cursor:pointer}
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  .view{padding:12px}
+}
+</style>
+</head>
+<body>
+
+<!-- ロック画面 -->
+<div id="lock-screen">
+  <div class="lock-box">
+    <div class="lock-logo">ELVIN</div>
+    <div class="lock-sub">ADMIN CONSOLE</div>
+    <input id="lock-url" type="text" placeholder="VPS URL (例: https://elvin.example.com)">
+    <input id="lock-secret" type="password" placeholder="Daemon Secret">
+    <button class="btn btn-primary" style="width:100%" onclick="unlock()">ログイン</button>
+    <div id="lock-err" class="lock-err"></div>
+  </div>
+</div>
+
+<!-- サイドバー -->
+<nav id="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-a">ELVIN</div>
+    <div class="sb-logo-b">ADMIN CONSOLE</div>
+    <div class="sb-logo-c">日本ネオン株式会社 内部管理</div>
+  </div>
+  <div class="sb-nav">
+    <div class="sb-section">ダッシュボード</div>
+    <button class="sb-item active" onclick="showView('dashboard')">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      ダッシュボード
+    </button>
+    <div class="sb-section">クライアント管理</div>
+    <button class="sb-item" onclick="showView('clients')">
+      <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      クライアント一覧
+    </button>
+    <button class="sb-item" onclick="showView('agents')">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/><path d="M12 14v6M9 17h6"/></svg>
+      エージェント
+    </button>
+    <div class="sb-section">AI管理</div>
+    <button class="sb-item" onclick="showView('memories')">
+      <svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4.03 3-9 3S3 13.66 3 12"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/></svg>
+      AI記憶管理
+    </button>
+    <button class="sb-item" onclick="showView('conversations')">
+      <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      会話履歴
+    </button>
+    <div class="sb-section">監視</div>
+    <button class="sb-item" onclick="showView('stats')">
+      <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 4-8"/></svg>
+      トークン統計
+    </button>
+    <button class="sb-item" onclick="showView('logs')">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+      ログ
+    </button>
+    <button class="sb-item" onclick="showView('tasks')">
+      <svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/><path d="M9 14l2 2 4-4"/></svg>
+      タスク履歴
+    </button>
+  </div>
+  <div class="sb-footer">
+    <div id="sb-connected" style="color:#4da6ff;font-weight:600;font-size:11px"></div>
+    <button onclick="logout()" style="background:none;border:none;color:var(--sb-txt);font-size:11px;cursor:pointer;margin-top:4px;padding:0">ログアウト</button>
+  </div>
+</nav>
+<div id="sb-overlay" onclick="closeSidebar()"></div>
+<button id="sb-toggle" style="display:none" onclick="document.getElementById('sidebar').classList.toggle('open');document.getElementById('sb-overlay').classList.toggle('open')">☰</button>
+
+<!-- ── メインコンテンツ ── -->
+<div id="main">
+
+<!-- ダッシュボード -->
+<div id="view-dashboard" class="view active">
+  <div class="page-header">
+    <div><div class="page-title">ダッシュボード</div><div class="page-sub">ELVIN サービス全体の状況</div></div>
+    <button class="btn btn-ghost btn-sm" onclick="loadDashboard()">更新</button>
+  </div>
+  <div class="stats-grid" id="dash-stats">
+    <div class="stat-card"><div class="stat-num" id="ds-clients">-</div><div class="stat-label">クライアント数</div></div>
+    <div class="stat-card"><div class="stat-num" id="ds-agents">-</div><div class="stat-label">エージェント数</div></div>
+    <div class="stat-card"><div class="stat-num" id="ds-tasks">-</div><div class="stat-label">今日のタスク</div></div>
+    <div class="stat-card"><div class="stat-num" id="ds-cost">-</div><div class="stat-label">今日のコスト(円)</div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">最近のタスク</div></div>
+    <div class="card-body"><table class="tbl"><thead><tr><th>クライアント</th><th>タイプ</th><th>ステータス</th><th>日時</th></tr></thead><tbody id="dash-tasks"></tbody></table></div>
+  </div>
+</div>
+
+<!-- クライアント一覧 -->
+<div id="view-clients" class="view">
+  <div class="page-header">
+    <div><div class="page-title">クライアント一覧</div></div>
+    <button class="btn btn-primary btn-sm" onclick="showClientForm()">+ 追加</button>
+  </div>
+  <div id="client-form-wrap" style="display:none" class="card" style="padding:16px">
+    <div class="card-header"><div class="card-title">新規クライアント</div></div>
+    <div class="card-body" style="padding:16px">
+      <div class="form-grid" style="grid-template-columns:1fr 1fr">
+        <div class="form-row"><label>会社名</label><input id="cf-name" placeholder="株式会社AGO"></div>
+        <div class="form-row"><label>トークン（自動生成）</label><input id="cf-token" placeholder="空欄で自動生成"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="createClient()">登録</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('client-form-wrap').style.display='none'">キャンセル</button>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-body"><table class="tbl"><thead><tr><th>ID</th><th>会社名</th><th>ステータス</th><th>トークン</th><th>最終通信</th><th></th></tr></thead><tbody id="clients-tbody"></tbody></table></div>
+  </div>
+</div>
+
+<!-- エージェント -->
+<div id="view-agents" class="view">
+  <div class="page-header">
+    <div><div class="page-title">エージェント</div></div>
+    <select id="agent-client-sel" onchange="loadAgents()" style="width:200px;margin-left:auto">
+      <option value="">クライアントを選択</option>
+    </select>
+  </div>
+  <div class="card">
+    <div class="card-body"><table class="tbl"><thead><tr><th>名前</th><th>役割</th><th>LINEグループID</th><th>有効</th><th>最終通信</th></tr></thead><tbody id="agents-tbody"></tbody></table></div>
+  </div>
+</div>
+
+<!-- AI記憶管理 -->
+<div id="view-memories" class="view">
+  <div class="page-header">
+    <div><div class="page-title">AI記憶管理</div><div class="page-sub">ELVINが各クライアントについて記憶していること</div></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="mem-client-sel" onchange="loadMemories()" style="width:200px">
+        <option value="">クライアントを選択</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="showMemAddForm()">+ 追加</button>
+    </div>
+  </div>
+  <div id="mem-add-form" style="display:none" class="card">
+    <div class="card-header"><div class="card-title">記憶を追加 / 更新</div></div>
+    <div class="card-body" style="padding:16px">
+      <div class="form-grid" style="grid-template-columns:1fr 1fr 2fr">
+        <div class="form-row"><label>カテゴリ</label><input id="ma-cat" placeholder="staff / projects / preferences"></div>
+        <div class="form-row"><label>キー</label><input id="ma-key" placeholder="tanaka_role"></div>
+        <div class="form-row"><label>内容</label><input id="ma-val" placeholder="田中さんは現場監督"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="addMemory()">保存</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('mem-add-form').style.display='none'">キャンセル</button>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-body"><div id="mem-tbody"></div></div>
+  </div>
+</div>
+
+<!-- 会話履歴 -->
+<div id="view-conversations" class="view">
+  <div class="page-header">
+    <div><div class="page-title">会話履歴</div></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="conv-client-sel" onchange="loadConversations()" style="width:200px">
+        <option value="">クライアントを選択</option>
+      </select>
+      <button class="btn btn-danger btn-sm" onclick="clearConversations()">履歴リセット</button>
+    </div>
+  </div>
+  <div id="conv-body" style="max-height:calc(100vh - 160px);overflow-y:auto"></div>
+</div>
+
+<!-- トークン統計 -->
+<div id="view-stats" class="view">
+  <div class="page-header">
+    <div><div class="page-title">トークン統計</div></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="stats-client-sel" onchange="loadStats()" style="width:160px">
+        <option value="all">全クライアント</option>
+      </select>
+      <select id="stats-days" onchange="loadStats()" style="width:100px">
+        <option value="1">今日</option>
+        <option value="7" selected>7日間</option>
+        <option value="30">30日間</option>
+      </select>
+    </div>
+  </div>
+  <div class="stats-grid" id="token-summary">
+    <div class="stat-card"><div class="stat-num" id="ts-in">-</div><div class="stat-label">入力トークン合計</div></div>
+    <div class="stat-card"><div class="stat-num" id="ts-out">-</div><div class="stat-label">出力トークン合計</div></div>
+    <div class="stat-card"><div class="stat-num" id="ts-tasks">-</div><div class="stat-label">完了タスク数</div></div>
+    <div class="stat-card"><div class="stat-num" id="ts-cost">-</div><div class="stat-label">推定コスト(円)</div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">時間帯別</div></div>
+    <div class="card-body"><table class="tbl"><thead><tr><th>時刻</th><th>入力</th><th>出力</th><th>タスク</th><th>コスト(円)</th></tr></thead><tbody id="stats-tbody"></tbody></table></div>
+  </div>
+</div>
+
+<!-- ログ -->
+<div id="view-logs" class="view">
+  <div class="page-header">
+    <div><div class="page-title">ログ</div></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="log-client-sel" onchange="loadLogs()" style="width:160px">
+        <option value="">全クライアント</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="loadLogs()">更新</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-body"><table class="tbl"><thead><tr><th>日時</th><th>クライアント</th><th>レベル</th><th>メッセージ</th></tr></thead><tbody id="logs-tbody"></tbody></table></div>
+  </div>
+</div>
+
+<!-- タスク履歴 -->
+<div id="view-tasks" class="view">
+  <div class="page-header">
+    <div><div class="page-title">タスク履歴</div></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="task-client-sel" onchange="loadTasks()" style="width:160px">
+        <option value="">全クライアント</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="loadTasks()">更新</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-body"><table class="tbl"><thead><tr><th>日時</th><th>クライアント</th><th>タイプ</th><th>ステータス</th><th>IN</th><th>OUT</th></tr></thead><tbody id="tasks-tbody"></tbody></table></div>
+  </div>
+</div>
+
+</div><!-- /main -->
+
+<script>
+// ── 状態 ──────────────────────────────────────────────────────────────────
+let VPS_URL = '';
+let DAEMON_SECRET = '';
+
+function getConfig() { return { url: VPS_URL, secret: DAEMON_SECRET }; }
+
+// ── ロック画面 ────────────────────────────────────────────────────────────
+async function unlock() {
+  const url = document.getElementById('lock-url').value.trim().replace(/\/$/, '');
+  const secret = document.getElementById('lock-secret').value.trim();
+  if (!url || !secret) { document.getElementById('lock-err').textContent = 'URLとSecretを入力してください'; return; }
+  document.getElementById('lock-err').textContent = '接続確認中...';
+  try {
+    const r = await fetch(url + '/api/v1/clients', { headers: { 'X-Daemon-Secret': secret } });
+    if (!r.ok) throw new Error('認証失敗 (' + r.status + ')');
+    VPS_URL = url;
+    DAEMON_SECRET = secret;
+    localStorage.setItem('elvin_admin_url', url);
+    localStorage.setItem('elvin_admin_secret', secret);
+    document.getElementById('lock-screen').style.display = 'none';
+    document.getElementById('sb-connected').textContent = '● ' + url.replace('https://', '').replace('http://', '').split('/')[0];
+    initAfterLogin();
+  } catch(e) {
+    document.getElementById('lock-err').textContent = e.message;
+  }
+}
+
+function logout() {
+  localStorage.removeItem('elvin_admin_url');
+  localStorage.removeItem('elvin_admin_secret');
+  location.reload();
+}
+
+// ── API ───────────────────────────────────────────────────────────────────
+async function api(path, method, body) {
+  const opts = { method: method || 'GET', headers: { 'X-Daemon-Secret': DAEMON_SECRET, 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(VPS_URL + path, opts);
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+// ── ナビゲーション ────────────────────────────────────────────────────────
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.sb-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  document.querySelectorAll('.sb-item').forEach(b => { if (b.getAttribute('onclick') && b.getAttribute('onclick').includes("'" + name + "'")) b.classList.add('active'); });
+  closeSidebar();
+  const loaders = { dashboard: loadDashboard, clients: loadClients, agents: loadAgentsView, memories: () => {}, conversations: () => {}, stats: loadStats, logs: loadLogs, tasks: loadTasks };
+  if (loaders[name]) loaders[name]();
+}
+
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sb-overlay').classList.remove('open');
+}
+
+// ── 初期化 ────────────────────────────────────────────────────────────────
+function initAfterLogin() {
+  loadClientSelects();
+  loadDashboard();
+}
+
+async function loadClientSelects() {
+  const clients = await api('/api/v1/clients').catch(() => []);
+  const selIds = ['mem-client-sel','conv-client-sel','agent-client-sel','log-client-sel','task-client-sel','stats-client-sel'];
+  selIds.forEach(id => {
+    const sel = document.getElementById(id);
+    const keepFirst = sel.options[0].textContent;
+    sel.innerHTML = '<option value="">' + keepFirst + '</option>';
+    clients.forEach(c => {
+      const o = new Option(c.name || c.id, c.id);
+      sel.appendChild(o);
+    });
+  });
+}
+
+// ── ダッシュボード ────────────────────────────────────────────────────────
+async function loadDashboard() {
+  try {
+    const [clients, tasks, stats] = await Promise.all([
+      api('/api/v1/clients'),
+      api('/api/v1/tasks/recent?limit=10'),
+      api('/api/v1/stats/tokens?days=1').catch(() => [])
+    ]);
+    document.getElementById('ds-clients').textContent = clients.length;
+    const agentCount = clients.reduce((s, c) => s + (c.agent_count || 0), 0);
+    document.getElementById('ds-agents').textContent = '-';
+    document.getElementById('ds-tasks').textContent = tasks.filter(t => t.created_at && t.created_at.startsWith(new Date().toISOString().substring(0,10))).length;
+    const totalCost = stats.reduce((s, r) => s + (r.cost_jpy || 0), 0);
+    document.getElementById('ds-cost').textContent = totalCost.toLocaleString();
+    const tbody = document.getElementById('dash-tasks');
+    tbody.innerHTML = tasks.map(t => `<tr>
+      <td>${esc(t.client_id ? t.client_id.substring(0,8) : '-')}</td>
+      <td>${esc(t.type)}</td>
+      <td><span class="badge ${t.status==='completed'?'badge-green':t.status==='failed'?'badge-red':'badge-gray'}">${esc(t.status)}</span></td>
+      <td style="color:var(--muted);font-size:11px">${(t.created_at||'').substring(0,16).replace('T',' ')}</td>
+    </tr>`).join('');
+  } catch(e) { console.error(e); }
+}
+
+// ── クライアント ──────────────────────────────────────────────────────────
+async function loadClients() {
+  const clients = await api('/api/v1/clients').catch(() => []);
+  document.getElementById('clients-tbody').innerHTML = clients.map(c => `<tr>
+    <td style="font-size:11px;color:var(--muted)">${esc(c.id.substring(0,8))}...</td>
+    <td style="font-weight:600">${esc(c.name || '-')}</td>
+    <td><span class="badge ${c.status==='active'?'badge-green':'badge-gray'}">${esc(c.status||'active')}</span></td>
+    <td style="font-size:11px;font-family:monospace;color:var(--muted)">${esc((c.token||'').substring(0,12))}...</td>
+    <td style="font-size:11px;color:var(--muted)">${(c.last_seen||'-').substring(0,16).replace('T',' ')}</td>
+    <td><button class="btn btn-ghost btn-sm" onclick="copyText('${esc(c.token)}')">トークンコピー</button></td>
+  </tr>`).join('');
+}
+
+function showClientForm() {
+  document.getElementById('client-form-wrap').style.display = 'block';
+}
+
+async function createClient() {
+  const name = document.getElementById('cf-name').value.trim();
+  const token = document.getElementById('cf-token').value.trim();
+  if (!name) { alert('会社名を入力してください'); return; }
+  await api('/api/v1/clients', 'POST', { name, token: token || undefined });
+  document.getElementById('client-form-wrap').style.display = 'none';
+  document.getElementById('cf-name').value = '';
+  document.getElementById('cf-token').value = '';
+  loadClients();
+  loadClientSelects();
+}
+
+// ── エージェント ──────────────────────────────────────────────────────────
+async function loadAgentsView() {
+  const clientId = document.getElementById('agent-client-sel').value;
+  if (!clientId) return;
+  loadAgents(clientId);
+}
+
+async function loadAgents(clientId) {
+  clientId = clientId || document.getElementById('agent-client-sel').value;
+  if (!clientId) return;
+  const agents = await api('/api/v1/clients/' + clientId + '/agents').catch(() => []);
+  document.getElementById('agents-tbody').innerHTML = agents.map(a => `<tr>
+    <td style="font-weight:600">${esc(a.name)}</td>
+    <td>${esc(a.role||'-')}</td>
+    <td style="font-size:11px;color:var(--muted)">${esc(a.line_group_id||'-')}</td>
+    <td><span class="badge ${a.enabled?'badge-green':'badge-gray'}">${a.enabled?'有効':'無効'}</span></td>
+    <td style="font-size:11px;color:var(--muted)">${(a.last_seen||'-').substring(0,16).replace('T',' ')}</td>
+  </tr>`).join('');
+}
+
+// ── AI記憶 ────────────────────────────────────────────────────────────────
+function showMemAddForm() {
+  const f = document.getElementById('mem-add-form');
+  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+}
+
+async function loadMemories() {
+  const clientId = document.getElementById('mem-client-sel').value;
+  if (!clientId) return;
+  const mems = await api('/api/v1/clients/' + clientId + '/memories').catch(() => []);
+  const body = document.getElementById('mem-tbody');
+  if (!mems.length) { body.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">記憶なし</div>'; return; }
+  let html = '<table class="tbl"><thead><tr><th>カテゴリ</th><th>キー</th><th>内容</th><th>更新日時</th><th></th></tr></thead><tbody>';
+  mems.forEach(m => {
+    html += `<tr>
+      <td><span class="badge badge-gray">${esc(m.category)}</span></td>
+      <td style="font-weight:600">${esc(m.key)}</td>
+      <td style="max-width:300px;word-break:break-word">${esc(m.value)}</td>
+      <td style="font-size:11px;color:var(--muted)">${(m.updated_at||'').substring(0,16).replace('T',' ')}</td>
+      <td><button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red)" onclick="deleteMemory('${esc(clientId)}','${esc(m.category)}','${esc(m.key)}')">削除</button></td>
+    </tr>`;
+  });
+  body.innerHTML = html + '</tbody></table>';
+}
+
+async function addMemory() {
+  const clientId = document.getElementById('mem-client-sel').value;
+  if (!clientId) { alert('クライアントを選択してください'); return; }
+  const cat = document.getElementById('ma-cat').value.trim();
+  const key = document.getElementById('ma-key').value.trim();
+  const val = document.getElementById('ma-val').value.trim();
+  if (!cat || !key || !val) { alert('全項目必須です'); return; }
+  await api('/api/v1/clients/' + clientId + '/memories', 'POST', { category: cat, key, value: val });
+  document.getElementById('ma-cat').value = '';
+  document.getElementById('ma-key').value = '';
+  document.getElementById('ma-val').value = '';
+  document.getElementById('mem-add-form').style.display = 'none';
+  loadMemories();
+}
+
+async function deleteMemory(clientId, category, key) {
+  if (!confirm('「' + key + '」を削除しますか？')) return;
+  await api('/api/v1/clients/' + clientId + '/memories/' + encodeURIComponent(category) + '/' + encodeURIComponent(key), 'DELETE');
+  loadMemories();
+}
+
+// ── 会話履歴 ──────────────────────────────────────────────────────────────
+async function loadConversations() {
+  const clientId = document.getElementById('conv-client-sel').value;
+  if (!clientId) return;
+  const convs = await api('/api/v1/clients/' + clientId + '/conversations?limit=80').catch(() => []);
+  const body = document.getElementById('conv-body');
+  if (!convs.length) { body.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted)">会話履歴なし</div>'; return; }
+  body.innerHTML = convs.map(c => {
+    const isUser = c.role === 'user';
+    const ts = (c.created_at||'').substring(0,16).replace('T',' ');
+    return `<div style="margin-bottom:12px;padding:0 4px">
+      <div class="bubble-meta">${isUser ? '👤 ユーザー' : '🤖 ELVIN'} · ${ts}</div>
+      <div class="bubble ${isUser ? 'bubble-user' : 'bubble-ai'}">${esc(c.content.length > 400 ? c.content.substring(0,400) + '...' : c.content)}</div>
+    </div>`;
+  }).join('');
+  body.scrollTop = body.scrollHeight;
+}
+
+async function clearConversations() {
+  const clientId = document.getElementById('conv-client-sel').value;
+  if (!clientId) return;
+  if (!confirm('会話履歴をリセットしますか？AIの短期記憶が消えます。')) return;
+  await api('/api/v1/clients/' + clientId + '/conversations', 'DELETE');
+  loadConversations();
+}
+
+// ── トークン統計 ──────────────────────────────────────────────────────────
+async function loadStats() {
+  const clientId = document.getElementById('stats-client-sel').value;
+  const days = document.getElementById('stats-days').value;
+  const path = '/api/v1/stats/tokens?days=' + days + (clientId ? '&client_id=' + clientId : '');
+  const rows = await api(path).catch(() => []);
+  let totalIn = 0, totalOut = 0, totalTasks = 0, totalCost = 0;
+  rows.forEach(r => { totalIn += r.tokens_in||0; totalOut += r.tokens_out||0; totalTasks += r.task_count||0; totalCost += r.cost_jpy||0; });
+  document.getElementById('ts-in').textContent = totalIn.toLocaleString();
+  document.getElementById('ts-out').textContent = totalOut.toLocaleString();
+  document.getElementById('ts-tasks').textContent = totalTasks.toLocaleString();
+  document.getElementById('ts-cost').textContent = totalCost.toLocaleString();
+  document.getElementById('stats-tbody').innerHTML = rows.map(r => `<tr>
+    <td style="font-size:11px;color:var(--muted)">${(r.hour||'').substring(0,16).replace('T',' ')}</td>
+    <td>${(r.tokens_in||0).toLocaleString()}</td>
+    <td>${(r.tokens_out||0).toLocaleString()}</td>
+    <td>${r.task_count||0}</td>
+    <td>${(r.cost_jpy||0).toLocaleString()}</td>
+  </tr>`).join('');
+}
+
+// ── ログ ──────────────────────────────────────────────────────────────────
+async function loadLogs() {
+  const clientId = document.getElementById('log-client-sel').value;
+  const path = '/api/v1/logs?limit=100' + (clientId ? '&client_id=' + clientId : '');
+  const logs = await api(path).catch(() => []);
+  document.getElementById('logs-tbody').innerHTML = logs.map(l => `<tr>
+    <td style="font-size:11px;color:var(--muted)">${(l.created_at||'').substring(0,16).replace('T',' ')}</td>
+    <td>${esc(l.client_name||l.client_id||'-')}</td>
+    <td><span class="badge ${l.level==='error'?'badge-red':l.level==='warn'?'badge-gray':'badge-green'}">${esc(l.level)}</span></td>
+    <td style="max-width:400px;word-break:break-word">${esc(l.message)}</td>
+  </tr>`).join('');
+}
+
+// ── タスク ────────────────────────────────────────────────────────────────
+async function loadTasks() {
+  const clientId = document.getElementById('task-client-sel').value;
+  const path = '/api/v1/tasks/recent?limit=50' + (clientId ? '&client_id=' + clientId : '');
+  const tasks = await api(path).catch(() => []);
+  document.getElementById('tasks-tbody').innerHTML = tasks.map(t => `<tr>
+    <td style="font-size:11px;color:var(--muted)">${(t.created_at||'').substring(0,16).replace('T',' ')}</td>
+    <td>${esc(t.client_id ? t.client_id.substring(0,8) : '-')}</td>
+    <td>${esc(t.type)}</td>
+    <td><span class="badge ${t.status==='completed'?'badge-green':t.status==='failed'?'badge-red':'badge-gray'}">${esc(t.status)}</span></td>
+    <td>${t.tokens_in||0}</td>
+    <td>${t.tokens_out||0}</td>
+  </tr>`).join('');
+}
+
+// ── ユーティリティ ────────────────────────────────────────────────────────
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function copyText(t) { navigator.clipboard.writeText(t).then(() => alert('コピーしました')); }
+
+// ── 起動時: 保存済みセッションの復元 ──────────────────────────────────────
+(function() {
+  const url = localStorage.getItem('elvin_admin_url');
+  const secret = localStorage.getItem('elvin_admin_secret');
+  if (url && secret) {
+    document.getElementById('lock-url').value = url;
+    document.getElementById('lock-secret').value = secret;
+    VPS_URL = url;
+    DAEMON_SECRET = secret;
+    document.getElementById('lock-screen').style.display = 'none';
+    document.getElementById('sb-connected').textContent = '● ' + url.replace('https://','').replace('http://','').split('/')[0];
+    initAfterLogin();
+  }
+})();
+</script>
+</body>
+</html>

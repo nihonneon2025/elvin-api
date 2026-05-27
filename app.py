@@ -1538,6 +1538,22 @@ def chat_static(filename):
     return send_from_directory(CHAT_DIR, filename)
 
 
+# ── ELVIN ADMIN 静的ファイル配信（日本ネオン内部管理画面） ─────────────────
+
+ADMIN_DIR = os.path.join(os.path.dirname(__file__), "admin")
+
+
+@app.route("/admin/")
+@app.route("/admin")
+def admin_index():
+    return send_from_directory(ADMIN_DIR, "index.html")
+
+
+@app.route("/admin/<path:filename>")
+def admin_static(filename):
+    return send_from_directory(ADMIN_DIR, filename)
+
+
 # ── 起動 ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
