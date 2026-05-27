@@ -29,6 +29,7 @@ import platform
 import re
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -86,6 +87,21 @@ CLIENT_ID: str = ""
 
 def ts():
     return datetime.now().strftime("%H:%M:%S")
+
+
+def vlog(message: str, level: str = "info", agent_id: str = None):
+    """VPS のデーモンログAPIに非同期送信（失敗しても無視）"""
+    def _send():
+        try:
+            requests.post(
+                f"{VPS_URL}/api/v1/logs",
+                headers=HEADERS,
+                json={"level": level, "message": message, "agent_id": agent_id},
+                timeout=5,
+            )
+        except Exception:
+            pass
+    threading.Thread(target=_send, daemon=True).start()
 
 
 def _resolve_room(prompt: str, requester_id: str, work_dir: str) -> str:
@@ -351,10 +367,13 @@ def execute(task: dict, agent: dict) -> dict:
                             timeout=10,
                         )
                         print(f"[{ts()}] [{agent.get('name','URVAN')}] DISPATCH → {target_name}")
+                        vlog(f"[{agent.get('name','URVAN')}] DISPATCH → {target_name}", agent_id=agent.get("agent_id"))
                     except Exception as e:
                         print(f"[{ts()}] DISPATCH失敗: {e}")
+                        vlog(f"DISPATCH失敗: {e}", level="error", agent_id=agent.get("agent_id"))
                 else:
                     print(f"[{ts()}] DISPATCHターゲット不明: {target_name!r}")
+                    vlog(f"DISPATCHターゲット不明: {target_name!r}", level="warn", agent_id=agent.get("agent_id"))
             return {
                 "output": output,
                 "error": result.stderr.strip()[:500] if result.stderr else "",
@@ -414,10 +433,13 @@ def execute(task: dict, agent: dict) -> dict:
                     out = lw_result.stdout.strip()[:500] if lw_result.stdout else ""
                     if lw_result.returncode != 0:
                         print(f"[{ts()}] LINE WORKS通知失敗 (exit={lw_result.returncode}): {out}")
+                        vlog(f"LINE WORKS通知失敗 (exit={lw_result.returncode}): {out}", level="error", agent_id=agent.get("agent_id"))
                     else:
                         print(f"[{ts()}] LINE WORKS通知OK（ファイル添付）: {room_name}")
+                        vlog(f"LINE WORKS通知OK: {room_name}", agent_id=agent.get("agent_id"))
                 except Exception as e:
                     print(f"[{ts()}] LINE WORKS通知失敗: {e}")
+                    vlog(f"LINE WORKS通知失敗: {e}", level="error", agent_id=agent.get("agent_id"))
                 finally:
                     tmp.unlink(missing_ok=True)
 
@@ -528,8 +550,10 @@ def poll_agent(agent: dict):
         sender = payload.get("requester_name", "不明")
         preview = payload.get("prompt", "")[:40].replace("\n", " ")
         print(f"[{ts()}] [{agent_name}] タスク受信: {task_type} [{sender}] 「{preview}...」")
+        vlog(f"[{agent_name}] タスク受信 [{sender}] 「{preview}」", agent_id=agent_id)
     else:
         print(f"[{ts()}] [{agent_name}] タスク受信: {task_type} (id: {task_id[:8]}...)")
+        vlog(f"[{agent_name}] タスク受信: {task_type}", agent_id=agent_id)
 
     try:
         result = execute(task, agent)
@@ -540,9 +564,11 @@ def poll_agent(agent: dict):
             timeout=15,
         )
         print(f"[{ts()}] [{agent_name}] 完了: {task_type}")
+        vlog(f"[{agent_name}] 完了: {task_type}", agent_id=agent_id)
     except Exception as e:
         error_msg = str(e)
         print(f"[{ts()}] [{agent_name}] 失敗: {task_type} — {error_msg}")
+        vlog(f"[{agent_name}] 失敗: {task_type} — {error_msg}", level="error", agent_id=agent_id)
         try:
             requests.post(
                 f"{VPS_URL}/api/v1/tasks/{task_id}/complete",
