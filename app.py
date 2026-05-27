@@ -1439,6 +1439,89 @@ def recent_tasks():
     return jsonify([dict(r) for r in rows])
 
 
+# ── メモリ管理 API（管理画面用） ─────────────────────────────────────────
+
+@app.route("/api/v1/clients/<client_id>/memories", methods=["GET"])
+@require_daemon
+def list_memories(client_id):
+    """クライアントの記憶一覧"""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, category, key, value, updated_at FROM memories"
+            " WHERE client_id = ? ORDER BY category, key",
+            (client_id,),
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/clients/<client_id>/memories", methods=["POST"])
+@require_daemon
+def create_memory(client_id):
+    """記憶を手動追加/更新"""
+    data = request.get_json(force=True)
+    category = (data.get("category") or "general").strip()
+    key = (data.get("key") or "").strip()
+    value = (data.get("value") or "").strip()
+    if not key or not value:
+        return jsonify({"error": "key and value required"}), 400
+    upsert_memory(client_id, category, key, value)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/v1/clients/<client_id>/memories/<category>/<key>", methods=["DELETE"])
+@require_daemon
+def delete_memory(client_id, category, key):
+    """記憶を削除"""
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM memories WHERE client_id = ? AND category = ? AND key = ?",
+            (client_id, category, key),
+        )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/v1/clients/<client_id>/conversations", methods=["GET"])
+@require_daemon
+def list_conversations(client_id):
+    """会話履歴（直近N件）"""
+    limit = min(int(request.args.get("limit", 50)), 200)
+    agent_id = request.args.get("agent_id")
+    if agent_id:
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT id, agent_id, role, content, created_at FROM conversations"
+                " WHERE client_id = ? AND agent_id = ?"
+                " ORDER BY created_at DESC LIMIT ?",
+                (client_id, agent_id, limit),
+            ).fetchall()
+    else:
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT id, agent_id, role, content, created_at FROM conversations"
+                " WHERE client_id = ?"
+                " ORDER BY created_at DESC LIMIT ?",
+                (client_id, limit),
+            ).fetchall()
+    return jsonify([dict(r) for r in reversed(rows)])
+
+
+@app.route("/api/v1/clients/<client_id>/conversations", methods=["DELETE"])
+@require_daemon
+def clear_conversations(client_id):
+    """会話履歴をリセット（エージェント指定可）"""
+    agent_id = request.args.get("agent_id")
+    if agent_id:
+        with get_db() as conn:
+            conn.execute(
+                "DELETE FROM conversations WHERE client_id = ? AND agent_id = ?",
+                (client_id, agent_id),
+            )
+    else:
+        with get_db() as conn:
+            conn.execute("DELETE FROM conversations WHERE client_id = ?", (client_id,))
+    return jsonify({"ok": True})
+
+
 # ── ELVIN CHAT 静的ファイル配信 ──────────────────────────────────────────
 
 CHAT_DIR = os.path.join(os.path.dirname(__file__), "chat")
