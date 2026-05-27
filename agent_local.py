@@ -316,7 +316,7 @@ def execute(task: dict, agent: dict) -> dict:
                 local_hint = (
                     f"\n\n【作業環境】\n"
                     f"・スクリプトの置き場所（作業基点）: {WORK_DIR}\n"
-                    f"・作業完了後は「何を・どこに・どんな名前で作ったか」を日本語3行以内で出力すること"
+                    f"・作業完了後は「何を・どこに・どんな名前で作ったか」を改行なしの1行テキストで出力すること"
                 )
                 room_prefix = f"返信先LINE WORKSルーム名: {room_name_hint}\n\n" if room_name_hint else ""
                 full_prompt = f"{system_prompt}{local_hint}\n\n---\n\n{room_prefix}{prompt}"
@@ -407,7 +407,7 @@ def execute(task: dict, agent: dict) -> dict:
                 "exit_code": result.returncode,
             }
 
-        # 完了後に LINE WORKS ルームへ通知（ファイル添付で1通）
+        # 完了後に LINE WORKS ルームへ通知（テキスト1行）
         if output:
             room_name = _resolve_room(prompt, requester_id, work_dir) or None
             if room_name:
@@ -417,12 +417,14 @@ def execute(task: dict, agent: dict) -> dict:
                 dept = agent.get("role", "")
                 name = agent.get("name", "ELVIN")
                 label = f"{dept} {name}".strip() if dept else name
-                notify_body = f"【{label}】完了報告\n\n{output}"
+                # 改行を全角スペースで置換して1行メッセージにする
+                summary = output.replace("\r\n", "　").replace("\r", "　").replace("\n", "　").strip()
+                notify_body = f"【{label}】完了: {summary}"
                 try:
                     tmp.write_text(notify_body, encoding="utf-8")
                     lw_result = subprocess.run(
                         ["python", str(Path(work_dir) / "lineworks_send.py"),
-                         room_name, str(tmp), "--file", "--headless"],
+                         room_name, str(tmp), "--headless"],
                         timeout=120,
                         cwd=work_dir,
                         capture_output=True,
@@ -435,7 +437,7 @@ def execute(task: dict, agent: dict) -> dict:
                         print(f"[{ts()}] LINE WORKS通知失敗 (exit={lw_result.returncode}): {out}")
                         vlog(f"LINE WORKS通知失敗 (exit={lw_result.returncode}): {out}", level="error", agent_id=agent.get("agent_id"))
                     else:
-                        print(f"[{ts()}] LINE WORKS通知OK（ファイル添付）: {room_name}")
+                        print(f"[{ts()}] LINE WORKS通知OK（テキスト）: {room_name}")
                         vlog(f"LINE WORKS通知OK: {room_name}", agent_id=agent.get("agent_id"))
                 except Exception as e:
                     print(f"[{ts()}] LINE WORKS通知失敗: {e}")
