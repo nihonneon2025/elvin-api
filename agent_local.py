@@ -297,17 +297,15 @@ def execute(task: dict, agent: dict) -> dict:
             elif system_prompt:
                 _req_id_hint = p.get("requester_id", "")
                 room_name_hint = _resolve_room(prompt, _req_id_hint, WORK_DIR)
-                lw_hint = ""
-                if room_name_hint:
-                    lw_script = str(Path(WORK_DIR) / "lineworks_send.py")
-                    lw_hint = (
-                        f"\n\n【LINE WORKS 通知】作業完了・中間報告は以下で送信してください:\n"
-                        f"  python \"{lw_script}\" \"{room_name_hint}\" <テキストファイル> --headless\n"
-                        f"  ※テキストファイルに報告内容を書いてから実行"
-                    )
-                # 返信先ルーム名をプロンプト先頭にも明示してClaude Codeに伝達
+                local_hint = (
+                    f"\n\n【作業ルール（必須）】\n"
+                    f"・作業フォルダ: {work_dir}\n"
+                    f"・ファイルはすべてローカルの上記フォルダに保存すること。Googleドライブ・OneDrive等クラウド保存は絶対禁止\n"
+                    f"・LINE WORKSへの通知は自動で送られるので、自分でlineworks_send.pyを呼ばないこと\n"
+                    f"・作業完了後は「何を・どこに・どんな名前で作ったか」を日本語3行以内で出力すること"
+                )
                 room_prefix = f"返信先LINE WORKSルーム名: {room_name_hint}\n\n" if room_name_hint else ""
-                full_prompt = f"{system_prompt}{lw_hint}\n\n---\n\n{room_prefix}{prompt}"
+                full_prompt = f"{system_prompt}{local_hint}\n\n---\n\n{room_prefix}{prompt}"
             else:
                 full_prompt = prompt
 
@@ -372,13 +370,13 @@ def execute(task: dict, agent: dict) -> dict:
             print(f"[{ts()}] [{agent.get('name','URVAN')}] ADMIN: {result_msg[:80]}")
             room_name = _resolve_room(prompt, requester_id, work_dir) or None
             if room_name:
-                tmp_prefix = requester_id[:8] if requester_id else "admin"
-                tmp = Path(work_dir) / f"_lw_admin_{tmp_prefix}.txt"
+                ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                tmp = Path(work_dir) / f"管理報告_{ts_str}.txt"
                 try:
                     tmp.write_text(f"【管理】\n{result_msg}", encoding="utf-8")
                     subprocess.run(
                         ["python", str(Path(work_dir) / "lineworks_send.py"),
-                         room_name, str(tmp), "--headless"],
+                         room_name, str(tmp), "--file", "--headless"],
                         timeout=60, cwd=work_dir, capture_output=True,
                         encoding="utf-8", errors="replace",
                     )
@@ -392,20 +390,22 @@ def execute(task: dict, agent: dict) -> dict:
                 "exit_code": result.returncode,
             }
 
-        # 完了後に LINE WORKS ルームへ通知
+        # 完了後に LINE WORKS ルームへ通知（ファイル添付で1通）
         if output:
             room_name = _resolve_room(prompt, requester_id, work_dir) or None
             if room_name:
-                tmp = Path(work_dir) / f"_lw_notify_{requester_id[:8]}.txt"
+                ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                a_name = re.sub(r'[\\/:*?"<>|]', '', agent.get("name", "ELVIN"))
+                tmp = Path(work_dir) / f"完了報告_{a_name}_{ts_str}.txt"
                 dept = agent.get("role", "")
                 name = agent.get("name", "ELVIN")
                 label = f"{dept} {name}".strip() if dept else name
-                notify_body = f"【{label}】\n{output}"
+                notify_body = f"【{label}】完了報告\n\n{output}"
                 try:
                     tmp.write_text(notify_body, encoding="utf-8")
                     lw_result = subprocess.run(
                         ["python", str(Path(work_dir) / "lineworks_send.py"),
-                         room_name, str(tmp), "--headless"],
+                         room_name, str(tmp), "--file", "--headless"],
                         timeout=120,
                         cwd=work_dir,
                         capture_output=True,
@@ -417,7 +417,7 @@ def execute(task: dict, agent: dict) -> dict:
                     if lw_result.returncode != 0:
                         print(f"[{ts()}] LINE WORKS通知失敗 (exit={lw_result.returncode}): {out}")
                     else:
-                        print(f"[{ts()}] LINE WORKS通知OK: {room_name}")
+                        print(f"[{ts()}] LINE WORKS通知OK（ファイル添付）: {room_name}")
                 except Exception as e:
                     print(f"[{ts()}] LINE WORKS通知失敗: {e}")
                 finally:
