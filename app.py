@@ -125,6 +125,23 @@ def init_db():
                 message    TEXT,
                 created_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS memories (
+                id         TEXT PRIMARY KEY,
+                client_id  TEXT NOT NULL,
+                category   TEXT NOT NULL,
+                key        TEXT NOT NULL,
+                value      TEXT NOT NULL,
+                updated_at TEXT,
+                UNIQUE(client_id, category, key)
+            );
+            CREATE TABLE IF NOT EXISTS conversations (
+                id         TEXT PRIMARY KEY,
+                client_id  TEXT NOT NULL,
+                agent_id   TEXT,
+                role       TEXT NOT NULL,
+                content    TEXT NOT NULL,
+                created_at TEXT
+            );
         """)
         # 既存DBへのカラム追加（冪等）
         for sql in [
@@ -1115,9 +1132,92 @@ def chat_task_status(task_id):
     })
 
 
+# ── メモリ・会話履歴 ヘルパー ────────────────────────────────────────────
+
+def load_memories(client_id: str) -> str:
+    """クライアントの全記憶をテキスト形式で返す（system promptに注入する）"""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT category, key, value FROM memories WHERE client_id = ? ORDER BY category, key",
+            (client_id,),
+        ).fetchall()
+    if not rows:
+        return ""
+    lines = []
+    current_cat = None
+    for r in rows:
+        if r["category"] != current_cat:
+            lines.append(f"\n### {r['category']}")
+            current_cat = r["category"]
+        lines.append(f"- {r['key']}: {r['value']}")
+    return "\n".join(lines)
+
+
+def load_conversation_history(client_id: str, agent_id: str | None, limit: int = 20) -> list:
+    """直近の会話履歴をAnthropicのmessages形式で返す"""
+    with get_db() as conn:
+        if agent_id:
+            rows = conn.execute(
+                "SELECT role, content FROM conversations"
+                " WHERE client_id = ? AND agent_id = ?"
+                " ORDER BY created_at DESC LIMIT ?",
+                (client_id, agent_id, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT role, content FROM conversations"
+                " WHERE client_id = ?"
+                " ORDER BY created_at DESC LIMIT ?",
+                (client_id, limit),
+            ).fetchall()
+    return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+
+
+def save_conversation(client_id: str, agent_id: str | None, role: str, content: str):
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO conversations (id, client_id, agent_id, role, content, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), client_id, agent_id, role, content, now_iso()),
+        )
+
+
+def upsert_memory(client_id: str, category: str, key: str, value: str):
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO memories (id, client_id, category, key, value, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(client_id, category, key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+            (str(uuid.uuid4()), client_id, category, key, value, now_iso()),
+        )
+
+
+_MEMORY_TOOL = {
+    "name": "save_memory",
+    "description": (
+        "重要な情報を記憶に保存する。"
+        "スタッフ情報・進行中案件・顧客の好み・繰り返し発生する業務パターンなど、"
+        "次回以降の会話で役立つ情報を積極的に保存すること。"
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "category": {
+                "type": "string",
+                "description": "カテゴリ例: staff / projects / preferences / tasks / knowledge",
+            },
+            "key": {"type": "string", "description": "記憶のキー（短い識別子）"},
+            "value": {"type": "string", "description": "保存する内容"},
+        },
+        "required": ["category", "key", "value"],
+    },
+}
+
+
 def _vps_process_chat(task_id: str, client_id: str, agent_id: str | None,
                       message: str, system_prompt: str):
     """Anthropic API で chat_message タスクを VPS 側で即時処理（バックグラウンドスレッド）。
+    記憶・会話履歴・メモリ保存ツールを注入してから呼び出す。
     ANTHROPIC_API_KEY が未設定の場合はローカルエージェントが拾う通常フローになる。
     """
     if not ANTHROPIC_API_KEY:
@@ -1127,16 +1227,65 @@ def _vps_process_chat(task_id: str, client_id: str, agent_id: str | None,
         import anthropic as _ant
 
         ant = _ant.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+        # 記憶を読み込んでsystem promptに注入
+        memories_text = load_memories(client_id)
+        base_prompt = system_prompt or "あなたは ELVIN、業務アシスタントAIです。日本語で回答してください。"
+        if memories_text:
+            full_system = base_prompt + "\n\n## 蓄積された記憶\n" + memories_text
+        else:
+            full_system = base_prompt
+
+        # 会話履歴を読み込む
+        history = load_conversation_history(client_id, agent_id, limit=20)
+        messages = history + [{"role": "user", "content": message}]
+
         resp = ant.messages.create(
             model=ANTHROPIC_MODEL,
             max_tokens=4096,
-            system=system_prompt or "あなたは ELVIN、業務アシスタントAIです。日本語で回答してください。",
-            messages=[{"role": "user", "content": message}],
+            system=full_system,
+            messages=messages,
+            tools=[_MEMORY_TOOL],
         )
 
-        output = resp.content[0].text if resp.content else ""
-        tokens_in = resp.usage.input_tokens
-        tokens_out = resp.usage.output_tokens
+        # AIがsave_memoryツールを呼んだ場合は記憶を保存
+        output_parts = []
+        for block in resp.content:
+            if block.type == "tool_use" and block.name == "save_memory":
+                inp = block.input
+                upsert_memory(client_id, inp.get("category", "general"), inp.get("key", ""), inp.get("value", ""))
+            elif block.type == "text":
+                output_parts.append(block.text)
+
+        # tool_useのみで終わった場合（stop_reason="tool_use"）は続きを呼ぶ
+        if resp.stop_reason == "tool_use":
+            tool_result_msgs = messages + [
+                {"role": "assistant", "content": resp.content},
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": b.id, "content": "保存しました"}
+                    for b in resp.content if b.type == "tool_use"
+                ]},
+            ]
+            resp2 = ant.messages.create(
+                model=ANTHROPIC_MODEL,
+                max_tokens=2048,
+                system=full_system,
+                messages=tool_result_msgs,
+            )
+            for block in resp2.content:
+                if block.type == "text":
+                    output_parts.append(block.text)
+            tokens_in = resp.usage.input_tokens + resp2.usage.input_tokens
+            tokens_out = resp.usage.output_tokens + resp2.usage.output_tokens
+        else:
+            tokens_in = resp.usage.input_tokens
+            tokens_out = resp.usage.output_tokens
+
+        output = "\n".join(output_parts)
+
+        # 会話履歴を保存
+        save_conversation(client_id, agent_id, "user", message)
+        save_conversation(client_id, agent_id, "assistant", output)
 
         with get_db() as conn:
             conn.execute(
