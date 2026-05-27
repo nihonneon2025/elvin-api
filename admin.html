@@ -42,7 +42,7 @@ button{cursor:pointer;font-family:inherit}
 .sidebar-brand{padding:24px 20px 20px;border-bottom:1px solid rgba(255,255,255,.08)}
 .sidebar-logo{font-size:17px;font-weight:800;letter-spacing:4px;color:#fff}
 .sidebar-sub{font-size:9px;letter-spacing:3px;color:rgba(255,255,255,.38);margin-top:3px;text-transform:uppercase}
-.sidebar-nav{flex:1;padding:10px 0}
+.sidebar-nav{flex:1;padding:10px 0;overflow-y:auto}
 .nav-item{
   display:flex;align-items:center;gap:10px;padding:10px 20px;
   font-size:13px;color:rgba(255,255,255,.55);cursor:pointer;transition:all .15s;
@@ -218,6 +218,14 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
 .dot-red{background:#c0392b}
 .dot-orange{background:#c05e10}
 
+/* ── Conv ────────────────────────────────────── */
+.conv-msg{
+  display:flex;gap:12px;align-items:flex-start;padding:10px 0;
+  border-bottom:1px solid #f0f2f5
+}
+.conv-msg:last-child{border-bottom:none}
+.conv-msg-content{font-size:13px;color:#2d3a52;word-break:break-all;line-height:1.6;flex:1}
+
 /* ── Misc ────────────────────────────────────── */
 .empty-state{text-align:center;padding:48px;color:#a0a8b8}
 .empty-state-icon{font-size:40px;margin-bottom:12px}
@@ -233,7 +241,7 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
 .toast{
   position:fixed;bottom:24px;right:24px;padding:12px 20px;
   background:#1a7a4a;color:#fff;border-radius:3px;font-size:13px;font-weight:500;
-  z-index:200;animation:slideIn .2s ease
+  z-index:300;animation:slideIn .2s ease
 }
 .toast.error{background:#c0392b}
 @keyframes slideIn{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
@@ -245,7 +253,6 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
 
 @media(max-width:768px){
   body{overflow:hidden}
-
   .mobile-header{
     display:flex;align-items:center;gap:12px;
     position:fixed;top:0;left:0;right:0;height:52px;z-index:30;
@@ -259,48 +266,35 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
   .mobile-hamburger span{width:18px;height:2px;background:#fff;border-radius:1px;display:block}
   .mobile-header-logo{font-size:15px;font-weight:800;letter-spacing:3px;color:#fff}
   .mobile-header-sub{font-size:9px;letter-spacing:2px;color:rgba(255,255,255,.4)}
-
   .mobile-backdrop.show{
     display:block;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40
   }
-
   #app{display:block;height:100vh;overflow:hidden;position:relative}
-
   #sidebar{
     position:fixed;left:0;top:0;bottom:0;z-index:50;
     transform:translateX(-220px);transition:transform .22s ease
   }
   #sidebar.open{transform:translateX(0);box-shadow:4px 0 24px rgba(0,0,0,.18)}
-
   #content{height:100vh;overflow-y:auto;padding:68px 14px 20px;width:100%}
-
   .stats-grid{grid-template-columns:repeat(2,1fr);gap:10px}
   .stat-value{font-size:22px}
   .stat-card{padding:14px 16px}
-
   .card{overflow-x:auto}
   table{min-width:580px}
-
   .page-header{flex-direction:column;align-items:flex-start;gap:10px;margin-bottom:16px}
   .page-title{font-size:16px}
-
   .log-item{grid-template-columns:auto auto 1fr;gap:6px;padding:10px 14px}
   .log-item .log-msg{grid-column:1/-1;color:#2d3a52}
   .log-time{font-size:10px}
-
   .chart-controls{flex-direction:column;align-items:flex-start;gap:8px;padding:14px 14px 0}
   .chart-controls select{width:100%;max-width:260px}
-
   .log-controls{flex-wrap:wrap;gap:8px}
   .log-controls select{flex:1;min-width:120px}
-
   .setup-form{padding:18px;max-width:100%}
   .agent-row-fields{grid-template-columns:1fr}
-
   .modal{width:96vw;max-height:88vh}
   .confirm-box{width:92%;padding:24px 18px}
   .login-box{width:90%;max-width:340px;padding:36px 24px}
-
   .agent-list{padding:10px}
   .agent-card{padding:12px}
   .agent-actions{flex-wrap:wrap}
@@ -324,7 +318,6 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
 <!-- ── Main App ──────────────────────────────── -->
 <div id="app" style="display:none">
 
-  <!-- Mobile Top Bar -->
   <div class="mobile-header">
     <button class="mobile-hamburger" onclick="toggleMobileSidebar()" aria-label="メニュー">
       <span></span><span></span><span></span>
@@ -335,7 +328,6 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
     </div>
   </div>
 
-  <!-- Mobile Backdrop -->
   <div class="mobile-backdrop" id="mobile-backdrop" onclick="toggleMobileSidebar()"></div>
 
   <aside id="sidebar">
@@ -355,6 +347,14 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
       <div class="nav-item" onclick="showTab('setup',this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2"/></svg>
         新規セットアップ
+      </div>
+      <div class="nav-item" onclick="showTab('memories',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v6c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 11v6c0 1.66 4.03 3 9 3s9-1.34 9-3v-6"/></svg>
+        AI記憶管理
+      </div>
+      <div class="nav-item" onclick="showTab('conversations',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        会話履歴
       </div>
       <div class="nav-item" onclick="showTab('tasks',this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
@@ -432,7 +432,6 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
           <div class="form-hint">英数字・アンダースコアのみ推奨。空白の場合は自動で生成されます。</div>
         </div>
         <hr class="divider">
-
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <label style="margin-bottom:0">エージェント</label>
           <button type="button" class="btn btn-ghost btn-sm" onclick="addAgentRow()">＋ エージェントを追加</button>
@@ -442,11 +441,41 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
           エージェントは後から「顧客管理」タブでも追加・編集できます。
           LINEのグループIDとプロンプトは登録後に設定することを推奨します。
         </div>
-
-        <button class="btn btn-primary" onclick="doSetup()" id="setup-btn">
-          セットアップ実行
-        </button>
+        <button class="btn btn-primary" onclick="doSetup()" id="setup-btn">セットアップ実行</button>
         <div id="setup-result"></div>
+      </div>
+    </div>
+
+    <!-- ── AI記憶管理 ── -->
+    <div id="tab-memories" style="display:none">
+      <div class="page-header">
+        <div class="page-title">AI記憶管理</div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <select id="mem-client-filter" onchange="loadMemories()" style="padding:7px 12px;min-width:180px">
+            <option value="">顧客を選択</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="loadMemories()">更新</button>
+          <button class="btn btn-primary btn-sm" onclick="showAddMemoryModal()">＋ 記憶を追加</button>
+        </div>
+      </div>
+      <div id="memories-container">
+        <div class="empty-state"><div class="empty-state-icon">🧠</div><div>顧客を選択してください</div></div>
+      </div>
+    </div>
+
+    <!-- ── 会話履歴 ── -->
+    <div id="tab-conversations" style="display:none">
+      <div class="page-header">
+        <div class="page-title">会話履歴</div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <select id="conv-client-filter" onchange="loadConversations()" style="padding:7px 12px;min-width:180px">
+            <option value="">顧客を選択</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="loadConversations()">更新</button>
+        </div>
+      </div>
+      <div id="conversations-container">
+        <div class="empty-state"><div class="empty-state-icon">💬</div><div>顧客を選択してください</div></div>
       </div>
     </div>
 
@@ -478,9 +507,7 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
       <div class="page-header">
         <div class="page-title">デーモンログ</div>
         <div class="log-controls">
-          <select id="log-client-filter" onchange="loadLogs()">
-            <option value="">全顧客</option>
-          </select>
+          <select id="log-client-filter" onchange="loadLogs()"><option value="">全顧客</option></select>
           <select id="log-level-filter" onchange="loadLogs()">
             <option value="">全レベル</option>
             <option value="info">INFO</option>
@@ -507,14 +534,10 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
         <div class="page-title">トークングラフ</div>
         <div class="log-controls">
           <label>顧客:</label>
-          <select id="chart-client-filter" onchange="loadChart()">
-            <option value="all">全顧客合計</option>
-          </select>
+          <select id="chart-client-filter" onchange="loadChart()"><option value="all">全顧客合計</option></select>
           <label>期間:</label>
           <select id="chart-days" onchange="loadChart()">
-            <option value="1">1日</option>
-            <option value="7" selected>7日</option>
-            <option value="30">30日</option>
+            <option value="1">1日</option><option value="7" selected>7日</option><option value="30">30日</option>
           </select>
           <label>表示:</label>
           <select id="chart-mode" onchange="renderChartFromCache()">
@@ -525,11 +548,7 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
           <button class="btn btn-ghost btn-sm" onclick="loadChart()">更新</button>
         </div>
       </div>
-      <div class="card">
-        <div class="chart-wrap">
-          <canvas id="token-chart"></canvas>
-        </div>
-      </div>
+      <div class="card"><div class="chart-wrap"><canvas id="token-chart"></canvas></div></div>
       <div class="card" style="margin-top:16px">
         <div class="card-header"><div class="card-title">期間合計</div></div>
         <div class="stats-grid" style="padding:16px">
@@ -540,6 +559,7 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
         </div>
       </div>
     </div>
+
     <!-- ── Billing ── -->
     <div id="tab-billing" style="display:none">
       <div class="page-header">
@@ -605,7 +625,7 @@ const BASE = '';
 let SECRET = 'elvin2026';
 let STATUS_DATA = [];
 let EDIT_AGENT_ID = '';
-let agentRows = [];  // setup用エージェント行
+let agentRows = [];
 
 // ── Auth ────────────────────────────────────────
 async function doLogin() {
@@ -635,10 +655,7 @@ function logout() {
 // ── API ─────────────────────────────────────────
 async function apiFetch(method, path, body, secret) {
   const s = secret || SECRET;
-  const opts = {
-    method,
-    headers: { 'X-Daemon-Secret': s, 'Content-Type': 'application/json' },
-  };
+  const opts = { method, headers: { 'X-Daemon-Secret': s, 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
   return fetch(BASE + path, opts);
 }
@@ -660,7 +677,6 @@ function toggleMobileSidebar() {
 
 // ── Tab Navigation ───────────────────────────────
 function showTab(name, el) {
-  // close mobile sidebar when tab selected
   if (window.innerWidth <= 768) {
     document.getElementById('sidebar').classList.remove('open');
     document.getElementById('mobile-backdrop').classList.remove('show');
@@ -675,15 +691,15 @@ function showTab(name, el) {
   if (name === 'logs') { populateLogClientFilter(); loadLogs(); startLogAutoRefresh(); }
   if (name === 'chart') { populateChartClientFilter(); loadChart(); }
   if (name === 'billing') loadBilling();
+  if (name === 'memories') populateMemClientFilter();
+  if (name === 'conversations') populateConvClientFilter();
 }
-
 
 // ── Dashboard ────────────────────────────────────
 async function loadDashboard() {
   try {
     const data = await api('GET', '/api/v1/status');
     STATUS_DATA = data;
-
     let totalAgents = 0, totalDone = 0, totalErrors = 0;
     data.forEach(c => {
       c.agents.forEach(a => {
@@ -692,12 +708,10 @@ async function loadDashboard() {
         totalErrors += (a.tasks && a.tasks.failed) || 0;
       });
     });
-
     document.getElementById('stat-clients').textContent = data.length;
     document.getElementById('stat-agents').textContent = totalAgents;
     document.getElementById('stat-done').textContent = totalDone;
     document.getElementById('stat-errors').textContent = totalErrors;
-
     const tbody = document.getElementById('dash-clients-body');
     if (data.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="empty-state text-muted">顧客なし</td></tr>';
@@ -707,28 +721,18 @@ async function loadDashboard() {
       const suspended = (c.status === 'suspended');
       const online = !suspended && c.last_seen && (Date.now() - new Date(c.last_seen).getTime() < 60000);
       let dot, badge;
-      if (suspended) {
-        dot = '<span class="dot dot-orange"></span>';
-        badge = '<span class="badge badge-orange">停止中</span>';
-      } else if (online) {
-        dot = '<span class="dot dot-green"></span>';
-        badge = '<span class="badge badge-green">オンライン</span>';
-      } else {
-        dot = '<span class="dot dot-gray"></span>';
-        badge = '<span class="badge badge-gray">オフライン</span>';
-      }
-      const ls = c.last_seen ? fmtTime(c.last_seen) : '未接続';
+      if (suspended) { dot = '<span class="dot dot-orange"></span>'; badge = '<span class="badge badge-orange">停止中</span>'; }
+      else if (online) { dot = '<span class="dot dot-green"></span>'; badge = '<span class="badge badge-green">オンライン</span>'; }
+      else { dot = '<span class="dot dot-gray"></span>'; badge = '<span class="badge badge-gray">オフライン</span>'; }
       return `<tr>
         <td>${dot}${badge}</td>
         <td><strong>${esc(c.name)}</strong></td>
         <td class="cell-mono">${esc(c.id)}</td>
         <td>${c.agents.length}</td>
-        <td class="cell-muted">${ls}</td>
+        <td class="cell-muted">${c.last_seen ? fmtTime(c.last_seen) : '未接続'}</td>
       </tr>`;
     }).join('');
-  } catch(e) {
-    toast('読み込みエラー: ' + e.message, true);
-  }
+  } catch(e) { toast('読み込みエラー: ' + e.message, true); }
 }
 
 // ── Clients ──────────────────────────────────────
@@ -752,22 +756,13 @@ function renderClientCard(c) {
   const suspended = (c.status === 'suspended');
   const mgrSuspended = (c.manager_status === 'suspended');
   const online = !suspended && c.last_seen && (Date.now() - new Date(c.last_seen).getTime() < 60000);
-  const ls = c.last_seen ? fmtTime(c.last_seen) : '未接続';
-
   let statusBadge;
   if (suspended) statusBadge = '<span class="badge badge-orange">AI停止中</span>';
   else if (online) statusBadge = '<span class="badge badge-green">AIオンライン</span>';
   else statusBadge = '<span class="badge badge-gray">AIオフライン</span>';
-
   const mgrBadge = mgrSuspended
     ? '<span class="badge badge-orange">MANAGER停止中</span>'
     : '<span class="badge badge-green">MANAGER稼働中</span>';
-
-  const toggleLabel = suspended ? 'AI再開' : 'AI停止';
-  const toggleCls = suspended ? 'btn-success' : 'btn-danger';
-  const mgrToggleLabel = mgrSuspended ? 'MANAGER再開' : 'MANAGER停止';
-  const mgrToggleCls = mgrSuspended ? 'btn-success' : 'btn-warning';
-
   const agents = c.agents.map(a => `
     <div class="agent-card">
       <div class="agent-card-header">
@@ -785,23 +780,20 @@ function renderClientCard(c) {
         ${fmtTaskBadges(a.tasks)}
         <span>最終応答: ${a.last_seen ? fmtTime(a.last_seen) : '—'}</span>
       </div>
-    </div>
-  `).join('');
-
+    </div>`).join('');
   return `
   <div class="card" style="margin-bottom:20px">
     <div class="card-header">
       <div>
         <div class="card-title">${esc(c.name)}</div>
-        <div style="font-size:11px;color:#64748b;margin-top:3px">ID: ${esc(c.id)} &nbsp;|&nbsp; 最終接続: ${ls}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:3px">ID: ${esc(c.id)} &nbsp;|&nbsp; 最終接続: ${c.last_seen ? fmtTime(c.last_seen) : '未接続'}</div>
       </div>
       <div class="flex-center" style="gap:8px;flex-wrap:wrap">
-        ${statusBadge}
-        ${mgrBadge}
+        ${statusBadge} ${mgrBadge}
         <button class="btn btn-ghost btn-sm" onclick="showUsageModal('${esc(c.id)}','${esc(c.name)}')">利用状況</button>
         <button class="btn btn-ghost btn-sm" onclick="showTokenModal('${esc(c.id)}')">トークン</button>
-        <button class="btn btn-sm ${toggleCls}" onclick="toggleClientStatus('${esc(c.id)}','${esc(c.status || 'active')}','${esc(c.name)}')">${toggleLabel}</button>
-        <button class="btn btn-sm ${mgrToggleCls}" onclick="toggleManagerStatus('${esc(c.id)}','${esc(c.manager_status || 'active')}','${esc(c.name)}')">${mgrToggleLabel}</button>
+        <button class="btn btn-sm ${suspended?'btn-success':'btn-danger'}" onclick="toggleClientStatus('${esc(c.id)}','${esc(c.status||'active')}','${esc(c.name)}')">${suspended?'AI再開':'AI停止'}</button>
+        <button class="btn btn-sm ${mgrSuspended?'btn-success':'btn-warning'}" onclick="toggleManagerStatus('${esc(c.id)}','${esc(c.manager_status||'active')}','${esc(c.name)}')">${mgrSuspended?'MANAGER再開':'MANAGER停止'}</button>
       </div>
     </div>
     <div class="agent-list">${agents || '<div class="text-muted text-sm" style="padding:8px">エージェントなし</div>'}</div>
@@ -816,7 +808,7 @@ function fmtTaskBadges(tasks) {
   }).join(' ');
 }
 
-// ── Client Status Toggle ──────────────────────────
+// ── Confirm ───────────────────────────────────────
 function showConfirm({icon, title, msg, okLabel, okClass, onOk}) {
   const overlay = document.getElementById('confirm-overlay');
   document.getElementById('confirm-icon').textContent = icon || '⚠️';
@@ -825,10 +817,9 @@ function showConfirm({icon, title, msg, okLabel, okClass, onOk}) {
   const okBtn = document.getElementById('confirm-ok');
   okBtn.textContent = okLabel || '実行';
   okBtn.className = 'btn ' + (okClass || 'btn-danger');
-  const cancelBtn = document.getElementById('confirm-cancel');
-  const close = () => { overlay.classList.remove('show'); };
+  const close = () => overlay.classList.remove('show');
   okBtn.onclick = () => { close(); onOk(); };
-  cancelBtn.onclick = close;
+  document.getElementById('confirm-cancel').onclick = close;
   overlay.onclick = (e) => { if (e.target === overlay) close(); };
   overlay.classList.add('show');
 }
@@ -839,20 +830,15 @@ async function toggleManagerStatus(clientId, currentStatus, clientName) {
   showConfirm({
     icon: isSuspend ? '🟡' : '🟢',
     title: isSuspend ? `「${clientName}」のMANAGERを停止しますか？` : `「${clientName}」のMANAGERを再開しますか？`,
-    msg: isSuspend
-      ? '業務管理システムへのアクセスが停止されます。AIは引き続き動作します。'
-      : '業務管理システムへのアクセスが再開されます。',
+    msg: isSuspend ? '業務管理システムへのアクセスが停止されます。AIは引き続き動作します。' : '業務管理システムへのアクセスが再開されます。',
     okLabel: isSuspend ? '停止する' : '再開する',
     okClass: isSuspend ? 'btn-warning' : 'btn-success',
     onOk: async () => {
       try {
         await api('PATCH', `/api/v1/clients/${clientId}/manager_status`, {status: newStatus});
         toast(isSuspend ? 'MANAGERを停止しました' : 'MANAGERを再開しました');
-        loadClients();
-        loadDashboard();
-      } catch(e) {
-        toast('エラー: ' + e.message, true);
-      }
+        loadClients(); loadDashboard();
+      } catch(e) { toast('エラー: ' + e.message, true); }
     }
   });
 }
@@ -863,124 +849,75 @@ async function toggleClientStatus(clientId, currentStatus, clientName) {
   showConfirm({
     icon: isSuspend ? '🔴' : '🟢',
     title: isSuspend ? `「${clientName}」のAIを停止しますか？` : `「${clientName}」のAIを再開しますか？`,
-    msg: isSuspend
-      ? '停止するとAIがすべてのタスクを受け取らなくなります。データは消えません。'
-      : '再開するとAIがタスクを受け取り始めます。',
+    msg: isSuspend ? '停止するとAIがすべてのタスクを受け取らなくなります。データは消えません。' : '再開するとAIがタスクを受け取り始めます。',
     okLabel: isSuspend ? '停止する' : '再開する',
     okClass: isSuspend ? 'btn-danger' : 'btn-success',
     onOk: async () => {
       try {
         await api('PATCH', `/api/v1/clients/${clientId}/status`, {status: newStatus});
         toast(isSuspend ? 'AIを停止しました' : 'AIを再開しました');
-        loadClients();
-        loadDashboard();
-      } catch(e) {
-        toast(e.message, true);
-      }
+        loadClients(); loadDashboard();
+      } catch(e) { toast(e.message, true); }
     }
   });
 }
 
-// ── Usage Modal ───────────────────────────────────
+// ── Modals ────────────────────────────────────────
 async function showUsageModal(clientId, clientName) {
   document.getElementById('modal-title').textContent = `利用状況 — ${clientName}`;
   document.getElementById('modal-body').innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
   document.getElementById('modal-footer').innerHTML = '<button class="btn btn-ghost" onclick="closeModal()">閉じる</button>';
   document.getElementById('modal-overlay').style.display = 'flex';
-
   try {
     const d = await api('GET', `/api/v1/clients/${clientId}/usage`);
     const hasTokens = d.tokens_in > 0 || d.tokens_out > 0;
     document.getElementById('modal-body').innerHTML = `
-      <div class="token-row">
-        <div class="token-label">入力トークン</div>
-        <div class="token-value">${d.tokens_in.toLocaleString()}</div>
-      </div>
-      <div class="token-row">
-        <div class="token-label">出力トークン</div>
-        <div class="token-value">${d.tokens_out.toLocaleString()}</div>
-      </div>
-      <div class="token-row">
-        <div class="token-label">完了タスク</div>
-        <div class="token-value">${d.done_tasks.toLocaleString()} / ${d.total_tasks.toLocaleString()}</div>
-      </div>
+      <div class="token-row"><div class="token-label">入力トークン</div><div class="token-value">${d.tokens_in.toLocaleString()}</div></div>
+      <div class="token-row"><div class="token-label">出力トークン</div><div class="token-value">${d.tokens_out.toLocaleString()}</div></div>
+      <div class="token-row"><div class="token-label">完了タスク</div><div class="token-value">${d.done_tasks.toLocaleString()} / ${d.total_tasks.toLocaleString()}</div></div>
       <hr class="divider">
       <div class="token-row">
         <div class="token-label">推定費用</div>
         <div class="token-value" style="color:${hasTokens?'#1a7a4a':'#a0a8b8'}">
-          ¥${d.cost_jpy.toLocaleString()}
-          <span style="color:#8a93a6;font-size:10px;margin-left:8px">($${d.cost_usd} USD)</span>
+          ¥${d.cost_jpy.toLocaleString()} <span style="color:#8a93a6;font-size:10px;margin-left:8px">($${d.cost_usd} USD)</span>
         </div>
-      </div>
-      <div style="margin-top:14px;padding:10px 14px;background:#f7f8fa;border:1px solid #eaecf0;border-radius:4px;font-size:11px;color:#8a93a6;line-height:1.7">
-        ※ Claude Sonnet 概算（入力$3/出力$15 per 100万トークン、1USD≒155円）<br>
-        ※ トークン計測はデーモンの --output-format json 対応後に有効になります<br>
-        ※ 実際の料金は <a href="https://console.anthropic.com" target="_blank" style="color:#1a4a9a">Anthropicコンソール</a> で確認してください
       </div>`;
-  } catch(e) {
-    document.getElementById('modal-body').innerHTML = `<div class="text-muted">${esc(e.message)}</div>`;
-  }
+  } catch(e) { document.getElementById('modal-body').innerHTML = `<div class="text-muted">${esc(e.message)}</div>`; }
 }
 
-// ── Token Modal ───────────────────────────────────
 async function showTokenModal(clientId) {
   document.getElementById('modal-title').textContent = 'クライアントトークン確認';
   document.getElementById('modal-body').innerHTML = `
-    <div class="text-muted text-sm" style="margin-bottom:16px">
-      セキュリティのため、トークンはセットアップ時のみ画面表示されます。<br>
-      確認が必要な場合はVPS上のDBを直接参照してください。
-    </div>
+    <div class="text-muted text-sm" style="margin-bottom:16px">セキュリティのため、トークンはセットアップ時のみ画面表示されます。</div>
     <div style="background:#f7f8fa;border:1px solid #eaecf0;border-radius:4px;padding:14px;font-family:'Courier New',monospace;font-size:12px;color:#2d3a52;line-height:2">
-      sqlite3 /root/elvin-api/tasks.db<br>
-      SELECT id,token FROM clients WHERE id='${esc(clientId)}';
+      sqlite3 /root/elvin-api/tasks.db<br>SELECT id,token FROM clients WHERE id='${esc(clientId)}';
     </div>`;
   document.getElementById('modal-footer').innerHTML = '<button class="btn btn-ghost" onclick="closeModal()">閉じる</button>';
   document.getElementById('modal-overlay').style.display = 'flex';
 }
 
-function closeModal() {
-  document.getElementById('modal-overlay').style.display = 'none';
-}
+function closeModal() { document.getElementById('modal-overlay').style.display = 'none'; }
 
-// ── Agent Edit Modal ──────────────────────────────
 async function openEditModal(agentId, agentName) {
   EDIT_AGENT_ID = agentId;
   document.getElementById('modal-title').textContent = `${agentName} — 編集`;
   document.getElementById('modal-body').innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
   document.getElementById('modal-footer').innerHTML = '';
   document.getElementById('modal-overlay').style.display = 'flex';
-
   try {
     const ag = await api('GET', `/api/v1/agents/${agentId}`);
     document.getElementById('modal-body').innerHTML = `
-      <div class="form-group">
-        <label>エージェントID</label>
-        <input type="text" value="${esc(agentId)}" readonly style="color:#475569">
-      </div>
+      <div class="form-group"><label>エージェントID</label><input type="text" value="${esc(agentId)}" readonly style="color:#475569"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
-        <div class="form-group" style="margin-bottom:0">
-          <label>名前</label>
-          <input type="text" id="modal-name" value="${esc(ag.name || '')}">
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label>役割</label>
-          <input type="text" id="modal-role" value="${esc(ag.role || '')}">
-        </div>
+        <div class="form-group" style="margin-bottom:0"><label>名前</label><input type="text" id="modal-name" value="${esc(ag.name||'')}"></div>
+        <div class="form-group" style="margin-bottom:0"><label>役割</label><input type="text" id="modal-role" value="${esc(ag.role||'')}"></div>
       </div>
-      <div class="form-group">
-        <label>LINE グループID</label>
-        <input type="text" id="modal-linegroupid" value="${esc(ag.line_group_id || '')}" placeholder="Cxxxxxxxx...">
-      </div>
-      <div class="form-group">
-        <label>system_prompt</label>
-        <textarea id="modal-prompt" rows="14">${esc(ag.system_prompt || '')}</textarea>
-      </div>`;
+      <div class="form-group"><label>LINE グループID</label><input type="text" id="modal-linegroupid" value="${esc(ag.line_group_id||'')}" placeholder="Cxxxxxxxx..."></div>
+      <div class="form-group"><label>system_prompt</label><textarea id="modal-prompt" rows="14">${esc(ag.system_prompt||'')}</textarea></div>`;
     document.getElementById('modal-footer').innerHTML = `
       <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
       <button class="btn btn-primary" onclick="saveAgent()">保存</button>`;
-  } catch(e) {
-    document.getElementById('modal-body').innerHTML = `<div class="text-muted">読み込みエラー: ${esc(e.message)}</div>`;
-  }
+  } catch(e) { document.getElementById('modal-body').innerHTML = `<div class="text-muted">読み込みエラー: ${esc(e.message)}</div>`; }
 }
 
 async function saveAgent() {
@@ -991,31 +928,16 @@ async function saveAgent() {
   if (!name) { toast('名前を入力してください', true); return; }
   try {
     await api('PATCH', `/api/v1/agents/${EDIT_AGENT_ID}`, { name, role, line_group_id, system_prompt });
-    toast('保存しました');
-    closeModal();
-    loadClients();
-  } catch(e) {
-    toast('保存エラー: ' + e.message, true);
-  }
+    toast('保存しました'); closeModal(); loadClients();
+  } catch(e) { toast('保存エラー: ' + e.message, true); }
 }
 
-// ── Setup: Dynamic Agent Rows ─────────────────────
-function addAgentRow() {
-  agentRows.push({ name: '', role: '' });
-  renderAgentRows();
-}
-
-function removeAgentRow(i) {
-  agentRows.splice(i, 1);
-  renderAgentRows();
-}
-
+// ── Setup ────────────────────────────────────────
+function addAgentRow() { agentRows.push({ name: '', role: '' }); renderAgentRows(); }
+function removeAgentRow(i) { agentRows.splice(i, 1); renderAgentRows(); }
 function renderAgentRows() {
   const container = document.getElementById('agent-rows');
-  if (agentRows.length === 0) {
-    container.innerHTML = '';
-    return;
-  }
+  if (!agentRows.length) { container.innerHTML = ''; return; }
   container.innerHTML = agentRows.map((ag, i) => `
     <div class="agent-row">
       <div class="agent-row-header">
@@ -1023,106 +945,195 @@ function renderAgentRows() {
         <button type="button" class="btn btn-ghost btn-sm" onclick="removeAgentRow(${i})" style="color:#ef4444;border-color:#ef4444">削除</button>
       </div>
       <div class="agent-row-fields">
-        <div class="form-group" style="margin-bottom:0">
-          <label>名前 *</label>
-          <input type="text" placeholder="例: 受付AI、営業AI..." value="${esc(ag.name)}"
-            oninput="agentRows[${i}].name=this.value">
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label>役割 <span style="font-weight:400;text-transform:none;color:#475569">（任意）</span></label>
-          <input type="text" placeholder="例: 問い合わせ対応" value="${esc(ag.role)}"
-            oninput="agentRows[${i}].role=this.value">
-        </div>
+        <div class="form-group" style="margin-bottom:0"><label>名前 *</label>
+          <input type="text" placeholder="例: 受付AI" value="${esc(ag.name)}" oninput="agentRows[${i}].name=this.value"></div>
+        <div class="form-group" style="margin-bottom:0"><label>役割 <span style="font-weight:400;text-transform:none;color:#475569">（任意）</span></label>
+          <input type="text" placeholder="例: 問い合わせ対応" value="${esc(ag.role)}" oninput="agentRows[${i}].role=this.value"></div>
       </div>
     </div>`).join('');
 }
 
-// ── Setup ────────────────────────────────────────
 async function doSetup() {
   const name = document.getElementById('setup-name').value.trim();
   if (!name) { toast('会社名を入力してください', true); return; }
-
   const clientId = document.getElementById('setup-clientid').value.trim();
-
-  // エージェント名チェック
   for (let i = 0; i < agentRows.length; i++) {
-    if (!agentRows[i].name.trim()) {
-      toast(`エージェント ${i+1} の名前を入力してください`, true);
-      return;
-    }
+    if (!agentRows[i].name.trim()) { toast(`エージェント ${i+1} の名前を入力してください`, true); return; }
   }
-
   const btn = document.getElementById('setup-btn');
-  btn.textContent = '処理中...';
-  btn.disabled = true;
+  btn.textContent = '処理中...'; btn.disabled = true;
   document.getElementById('setup-result').innerHTML = '';
-
   try {
-    const agents = agentRows.map(ag => ({ name: ag.name.trim(), role: ag.role.trim() }));
     const data = await api('POST', '/api/v1/setup/client', {
-      name,
-      client_id: clientId || undefined,
-      agents,
+      name, client_id: clientId || undefined,
+      agents: agentRows.map(ag => ({ name: ag.name.trim(), role: ag.role.trim() })),
     });
-
-    const agentRows2 = data.agents.length > 0
-      ? data.agents.map(a => `
-          <div class="token-row">
-            <div class="token-label">${esc(a.name)}</div>
-            <div class="token-value">${esc(a.agent_id)}</div>
-            <button class="copy-btn" onclick="copyText('${esc(a.agent_id)}')">コピー</button>
-          </div>`)
-      : ['<div style="color:#64748b;font-size:12px;padding:8px 0">エージェントなし（後から追加してください）</div>'];
-
+    const agHtml = data.agents.length > 0
+      ? data.agents.map(a => `<div class="token-row"><div class="token-label">${esc(a.name)}</div><div class="token-value">${esc(a.agent_id)}</div><button class="copy-btn" onclick="copyText('${esc(a.agent_id)}')">コピー</button></div>`).join('')
+      : '<div style="color:#64748b;font-size:12px;padding:8px 0">エージェントなし</div>';
     document.getElementById('setup-result').innerHTML = `
       <div class="result-box">
         <div class="result-title">✓ セットアップ完了</div>
-        <div class="token-row">
-          <div class="token-label">会社名</div>
-          <div class="token-value" style="color:#1a2035">${esc(data.client_id ? name : '')}</div>
-        </div>
-        <div class="token-row">
-          <div class="token-label">顧客ID</div>
-          <div class="token-value">${esc(data.client_id)}</div>
-          <button class="copy-btn" onclick="copyText('${esc(data.client_id)}')">コピー</button>
-        </div>
-        <div class="token-row">
-          <div class="token-label">トークン</div>
-          <div class="token-value">${esc(data.token)}</div>
-          <button class="copy-btn" onclick="copyText('${esc(data.token)}')">コピー</button>
-        </div>
-        <div class="token-row" style="background:#f0f8ff;border-color:#b8d4f0">
-          <div class="token-label">Webhook URL</div>
-          <div class="token-value" style="color:#1a4a9a">${esc('https://api.nihon-neon.jp/webhook/' + data.token)}</div>
-          <button class="copy-btn" onclick="copyText('${esc('https://api.nihon-neon.jp/webhook/' + data.token)}')">コピー</button>
-        </div>
-        ${data.agents.length > 0 ? '<div style="margin:14px 0 8px;font-size:11px;font-weight:600;color:#94a3b8;letter-spacing:1px">作成されたエージェント</div>' + agentRows2.join('') : agentRows2[0]}
-        <div style="margin-top:14px;font-size:11px;color:#475569;line-height:1.7">
-          ① トークンをデーモンの設定ファイル（elvin_config.json）に設定してください。<br>
-          ② Webhook URLを LINE Developers の Webhook URL欄に設定してください。<br>
-          ③ エージェントのプロンプト・LINEグループIDは「顧客管理」タブから編集できます。
-        </div>
+        <div class="token-row"><div class="token-label">顧客ID</div><div class="token-value">${esc(data.client_id)}</div><button class="copy-btn" onclick="copyText('${esc(data.client_id)}')">コピー</button></div>
+        <div class="token-row"><div class="token-label">トークン</div><div class="token-value">${esc(data.token)}</div><button class="copy-btn" onclick="copyText('${esc(data.token)}')">コピー</button></div>
+        <div class="token-row" style="background:#f0f8ff;border-color:#b8d4f0"><div class="token-label">Webhook URL</div><div class="token-value" style="color:#1a4a9a">${esc('https://api.nihon-neon.jp/webhook/' + data.token)}</div><button class="copy-btn" onclick="copyText('${esc('https://api.nihon-neon.jp/webhook/' + data.token)}')">コピー</button></div>
+        ${data.agents.length > 0 ? '<div style="margin:14px 0 8px;font-size:11px;font-weight:600;color:#94a3b8;letter-spacing:1px">作成されたエージェント</div>' : ''}${agHtml}
       </div>`;
-
     document.getElementById('setup-name').value = '';
     document.getElementById('setup-clientid').value = '';
-    agentRows = [];
-    renderAgentRows();
-  } catch(e) {
-    toast('セットアップエラー: ' + e.message, true);
-  } finally {
-    btn.textContent = 'セットアップ実行';
-    btn.disabled = false;
+    agentRows = []; renderAgentRows();
+  } catch(e) { toast('セットアップエラー: ' + e.message, true); }
+  finally { btn.textContent = 'セットアップ実行'; btn.disabled = false; }
+}
+
+// ── AI記憶管理 ────────────────────────────────────
+async function populateMemClientFilter() {
+  if (!STATUS_DATA.length) { try { STATUS_DATA = await api('GET', '/api/v1/status'); } catch {} }
+  const sel = document.getElementById('mem-client-filter');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">顧客を選択</option>' +
+    STATUS_DATA.map(c => `<option value="${esc(c.id)}" ${c.id===cur?'selected':''}>${esc(c.name)}</option>`).join('');
+}
+
+async function loadMemories() {
+  const clientId = document.getElementById('mem-client-filter').value;
+  const container = document.getElementById('memories-container');
+  if (!clientId) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🧠</div><div>顧客を選択してください</div></div>';
+    return;
   }
+  container.innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
+  try {
+    const memories = await api('GET', `/api/v1/clients/${clientId}/memories`);
+    if (!memories.length) {
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🧠</div><div>記憶なし</div><div class="text-muted text-sm mt-3">AIがタスクを処理するにつれて自動で蓄積されます</div></div>';
+      return;
+    }
+    const byCategory = {};
+    memories.forEach(m => { if (!byCategory[m.category]) byCategory[m.category] = []; byCategory[m.category].push(m); });
+    container.innerHTML = Object.entries(byCategory).map(([cat, items]) => `
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header"><div class="card-title">${esc(cat)}</div><div class="text-muted text-sm">${items.length}件</div></div>
+        <table>
+          <thead><tr><th style="width:160px">キー</th><th>値</th><th style="width:130px">更新日時</th><th style="width:60px"></th></tr></thead>
+          <tbody>${items.map(m => `
+            <tr>
+              <td class="cell-mono">${esc(m.key)}</td>
+              <td style="word-break:break-all;line-height:1.6">${esc(m.value)}</td>
+              <td class="cell-muted">${fmtTime(m.updated_at)}</td>
+              <td><button class="btn btn-ghost btn-sm" style="color:#ef4444;border-color:#ef4444"
+                onclick="deleteMemory('${esc(clientId)}','${esc(m.category)}','${esc(m.key)}')">削除</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`).join('');
+  } catch(e) { container.innerHTML = `<div class="empty-state text-muted">エラー: ${esc(e.message)}</div>`; }
+}
+
+function showAddMemoryModal() {
+  const clientId = document.getElementById('mem-client-filter').value;
+  if (!clientId) { toast('顧客を選択してください', true); return; }
+  document.getElementById('modal-title').textContent = 'AI記憶を追加';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-group"><label>カテゴリ</label><input type="text" id="new-mem-cat" placeholder="例: preference / fact / instruction"><div class="form-hint">AIが記憶を分類するためのグループ名です</div></div>
+    <div class="form-group"><label>キー</label><input type="text" id="new-mem-key" placeholder="例: tone / client_name"></div>
+    <div class="form-group"><label>値</label><textarea id="new-mem-val" rows="5" placeholder="記憶する内容を入力してください"></textarea></div>`;
+  document.getElementById('modal-footer').innerHTML = `
+    <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
+    <button class="btn btn-primary" onclick="addMemory('${esc(clientId)}')">追加</button>`;
+  document.getElementById('modal-overlay').style.display = 'flex';
+}
+
+async function addMemory(clientId) {
+  const category = document.getElementById('new-mem-cat').value.trim();
+  const key = document.getElementById('new-mem-key').value.trim();
+  const value = document.getElementById('new-mem-val').value.trim();
+  if (!category || !key || !value) { toast('すべての項目を入力してください', true); return; }
+  try {
+    await api('POST', `/api/v1/clients/${clientId}/memories`, { category, key, value });
+    toast('記憶を追加しました'); closeModal(); loadMemories();
+  } catch(e) { toast('エラー: ' + e.message, true); }
+}
+
+async function deleteMemory(clientId, category, key) {
+  showConfirm({
+    icon: '🧠', title: '記憶を削除しますか？',
+    msg: `[${category}] ${key} を削除します。この操作は取り消せません。`,
+    okLabel: '削除する', okClass: 'btn-danger',
+    onOk: async () => {
+      try {
+        await api('DELETE', `/api/v1/clients/${encodeURIComponent(clientId)}/memories/${encodeURIComponent(category)}/${encodeURIComponent(key)}`);
+        toast('削除しました'); loadMemories();
+      } catch(e) { toast('エラー: ' + e.message, true); }
+    }
+  });
+}
+
+// ── 会話履歴 ─────────────────────────────────────
+async function populateConvClientFilter() {
+  if (!STATUS_DATA.length) { try { STATUS_DATA = await api('GET', '/api/v1/status'); } catch {} }
+  const sel = document.getElementById('conv-client-filter');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">顧客を選択</option>' +
+    STATUS_DATA.map(c => `<option value="${esc(c.id)}" ${c.id===cur?'selected':''}>${esc(c.name)}</option>`).join('');
+}
+
+async function loadConversations() {
+  const clientId = document.getElementById('conv-client-filter').value;
+  const container = document.getElementById('conversations-container');
+  if (!clientId) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">💬</div><div>顧客を選択してください</div></div>';
+    return;
+  }
+  container.innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
+  try {
+    const convs = await api('GET', `/api/v1/clients/${clientId}/conversations`);
+    const clientName = (STATUS_DATA.find(s => s.id === clientId) || {}).name || clientId;
+    const clearBtn = `<div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+      <button class="btn btn-danger btn-sm" onclick="clearConversations('${esc(clientId)}','${esc(clientName)}')">「${esc(clientName)}」の会話履歴を全削除</button>
+    </div>`;
+    if (!convs.length) {
+      container.innerHTML = clearBtn + '<div class="empty-state"><div class="empty-state-icon">💬</div><div>会話履歴なし</div></div>';
+      return;
+    }
+    const byAgent = {};
+    convs.forEach(c => {
+      const k = c.agent_id || 'unknown';
+      if (!byAgent[k]) byAgent[k] = { name: c.agent_name || k, msgs: [] };
+      byAgent[k].msgs.push(c);
+    });
+    container.innerHTML = clearBtn + Object.entries(byAgent).map(([, ag]) => `
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header"><div class="card-title">${esc(ag.name)}</div><div class="text-muted text-sm">${ag.msgs.length}件</div></div>
+        <div style="padding:16px">${ag.msgs.map(m => `
+          <div class="conv-msg">
+            <span class="badge ${m.role==='user'?'badge-blue':'badge-green'}" style="flex-shrink:0;margin-top:2px">${m.role==='user'?'USER':'AI'}</span>
+            <div><div class="conv-msg-content">${esc(m.content)}</div><div class="cell-muted" style="font-size:11px;margin-top:3px">${fmtTime(m.created_at)}</div></div>
+          </div>`).join('')}
+        </div>
+      </div>`).join('');
+  } catch(e) { container.innerHTML = `<div class="empty-state text-muted">エラー: ${esc(e.message)}</div>`; }
+}
+
+async function clearConversations(clientId, clientName) {
+  showConfirm({
+    icon: '💬', title: `「${clientName}」の会話履歴を全削除しますか？`,
+    msg: 'AIとの全会話履歴が削除されます。この操作は取り消せません。',
+    okLabel: '全削除する', okClass: 'btn-danger',
+    onOk: async () => {
+      try {
+        await api('DELETE', `/api/v1/clients/${encodeURIComponent(clientId)}/conversations`);
+        toast('会話履歴を削除しました'); loadConversations();
+      } catch(e) { toast('エラー: ' + e.message, true); }
+    }
+  });
 }
 
 // ── Tasks ────────────────────────────────────────
 async function loadTasks() {
   const tbody = document.getElementById('tasks-body');
   tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><div class="spinner"></div></td></tr>';
-
   const clientId = document.getElementById('tasks-client-filter').value;
-
   if (STATUS_DATA.length > 0) {
     const sel = document.getElementById('tasks-client-filter');
     const current = sel.value;
@@ -1132,63 +1143,42 @@ async function loadTasks() {
     try {
       STATUS_DATA = await api('GET', '/api/v1/status');
       const sel = document.getElementById('tasks-client-filter');
-      sel.innerHTML = '<option value="">全顧客</option>' +
-        STATUS_DATA.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+      sel.innerHTML = '<option value="">全顧客</option>' + STATUS_DATA.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
     } catch {}
   }
-
   try {
     const qs = clientId ? `?client_id=${clientId}&limit=100` : '?limit=100';
     const tasks = await api('GET', '/api/v1/tasks/recent' + qs);
-
-    if (tasks.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-state text-muted">タスクなし</td></tr>';
-      return;
-    }
-
+    if (!tasks.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty-state text-muted">タスクなし</td></tr>'; return; }
     tbody.innerHTML = tasks.map(t => {
-      const status = t.status;
-      const badgeCls = status==='completed'?'badge-green':status==='failed'?'badge-red':status==='running'?'badge-blue':'badge-yellow';
-      const statusLabel = {'completed':'完了','failed':'失敗','running':'実行中','pending':'待機中'}[status] || status;
-      const errorHint = t.error ? `<span title="${esc(t.error)}" style="cursor:help;color:#ef4444">⚠</span>` : '';
-      const tokenInfo = (t.tokens_in || t.tokens_out)
-        ? `<span style="font-size:10px;color:#64748b">${(t.tokens_in||0)}↑ ${(t.tokens_out||0)}↓</span>`
-        : '<span style="color:#334155;font-size:10px">—</span>';
+      const badgeCls = t.status==='completed'?'badge-green':t.status==='failed'?'badge-red':t.status==='running'?'badge-blue':'badge-yellow';
+      const statusLabel = {'completed':'完了','failed':'失敗','running':'実行中','pending':'待機中'}[t.status] || t.status;
       return `<tr>
         <td class="cell-muted">${t.created_at ? fmtTime(t.created_at) : '—'}</td>
         <td class="cell-mono">${esc(t.client_id)}</td>
         <td>${esc(t.agent_name || '—')}</td>
         <td><code style="font-size:11px;color:#94a3b8">${esc(t.type)}</code></td>
         <td><span class="badge ${badgeCls}">${statusLabel}</span></td>
-        <td>${tokenInfo}</td>
-        <td>${errorHint}${t.completed_at ? fmtTime(t.completed_at) : ''}</td>
+        <td>${(t.tokens_in||t.tokens_out) ? `<span style="font-size:10px;color:#64748b">${t.tokens_in||0}↑ ${t.tokens_out||0}↓</span>` : '—'}</td>
+        <td>${t.error?`<span title="${esc(t.error)}" style="cursor:help;color:#ef4444">⚠</span>`:''}${t.completed_at?fmtTime(t.completed_at):''}</td>
       </tr>`;
     }).join('');
-  } catch(e) {
-    tbody.innerHTML = `<tr><td colspan="7" class="empty-state text-muted">エラー: ${esc(e.message)}</td></tr>`;
-  }
+  } catch(e) { tbody.innerHTML = `<tr><td colspan="7" class="empty-state text-muted">エラー: ${esc(e.message)}</td></tr>`; }
 }
 
 // ── Util ──────────────────────────────────────────
 function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-
 function fmtTime(iso) {
   if (!iso) return '—';
-  const d = new Date(iso);
-  const now = new Date();
-  const diff = Math.floor((now - d) / 1000);
+  const d = new Date(iso), now = new Date(), diff = Math.floor((now - d) / 1000);
   if (diff < 60) return `${diff}秒前`;
   if (diff < 3600) return `${Math.floor(diff/60)}分前`;
   if (diff < 86400) return `${Math.floor(diff/3600)}時間前`;
   return d.toLocaleDateString('ja-JP') + ' ' + d.toLocaleTimeString('ja-JP', {hour:'2-digit',minute:'2-digit'});
 }
-
-function copyText(text) {
-  navigator.clipboard.writeText(text).then(() => toast('コピーしました'));
-}
-
+function copyText(text) { navigator.clipboard.writeText(text).then(() => toast('コピーしました')); }
 function toast(msg, isError) {
   const t = document.createElement('div');
   t.className = 'toast' + (isError ? ' error' : '');
@@ -1199,14 +1189,12 @@ function toast(msg, isError) {
 
 // ── Log Tab ───────────────────────────────────────
 let _logTimer = null;
-
 function populateLogClientFilter() {
   const sel = document.getElementById('log-client-filter');
   const cur = sel.value;
   sel.innerHTML = '<option value="">全顧客</option>' +
     STATUS_DATA.map(c => `<option value="${esc(c.id)}" ${c.id===cur?'selected':''}>${esc(c.name)}</option>`).join('');
 }
-
 async function loadLogs() {
   const clientId = document.getElementById('log-client-filter').value;
   const level = document.getElementById('log-level-filter').value;
@@ -1216,27 +1204,17 @@ async function loadLogs() {
   try {
     const rows = await api('GET', url);
     const ul = document.getElementById('log-list');
-    if (!rows.length) {
-      ul.innerHTML = '<li style="padding:20px;text-align:center;color:#475569">ログなし</li>';
-      return;
-    }
-    const levelBadge = (lv) => {
-      const cls = lv === 'error' ? 'badge-log-error' : lv === 'warn' ? 'badge-log-warn' : 'badge-log-info';
-      return `<span class="${cls}">${(lv||'info').toUpperCase()}</span>`;
-    };
+    if (!rows.length) { ul.innerHTML = '<li style="padding:20px;text-align:center;color:#475569">ログなし</li>'; return; }
+    const levelBadge = lv => `<span class="${lv==='error'?'badge-log-error':lv==='warn'?'badge-log-warn':'badge-log-info'}">${(lv||'info').toUpperCase()}</span>`;
     ul.innerHTML = rows.map(r => `
       <li class="log-item">
         <span class="log-time">${fmtTime(r.created_at)}</span>
         <span>${levelBadge(r.level)}</span>
-        <span style="color:#94a3b8;font-size:11px">${esc(r.agent_name || r.client_name || '—')}</span>
+        <span style="color:#94a3b8;font-size:11px">${esc(r.agent_name||r.client_name||'—')}</span>
         <span class="log-msg">${esc(r.message)}</span>
       </li>`).join('');
-  } catch(e) {
-    document.getElementById('log-list').innerHTML =
-      `<li style="padding:20px;text-align:center;color:#ef4444">${esc(e.message)}</li>`;
-  }
+  } catch(e) { document.getElementById('log-list').innerHTML = `<li style="padding:20px;text-align:center;color:#ef4444">${esc(e.message)}</li>`; }
 }
-
 function startLogAutoRefresh() {
   if (_logTimer) clearInterval(_logTimer);
   _logTimer = setInterval(loadLogs, 5000);
@@ -1244,103 +1222,43 @@ function startLogAutoRefresh() {
 }
 
 // ── Chart Tab ─────────────────────────────────────
-let _chartInstance = null;
-let _chartCache = [];
-
+let _chartInstance = null, _chartCache = [];
 function populateChartClientFilter() {
   const sel = document.getElementById('chart-client-filter');
   const cur = sel.value;
   sel.innerHTML = '<option value="all">全顧客合計</option>' +
     STATUS_DATA.map(c => `<option value="${esc(c.id)}" ${c.id===cur?'selected':''}>${esc(c.name)}</option>`).join('');
 }
-
 async function loadChart() {
   const clientId = document.getElementById('chart-client-filter').value;
   const days = document.getElementById('chart-days').value;
   let url = `/api/v1/stats/tokens?days=${days}`;
   if (clientId && clientId !== 'all') url += `&client_id=${encodeURIComponent(clientId)}`;
-  try {
-    _chartCache = await api('GET', url);
-    renderChartFromCache();
-  } catch(e) {
-    console.error(e);
-  }
+  try { _chartCache = await api('GET', url); renderChartFromCache(); } catch(e) { console.error(e); }
 }
-
 function renderChartFromCache() {
   const mode = document.getElementById('chart-mode').value;
   const rows = _chartCache;
-
-  const labels = rows.map(r => {
-    const d = new Date(r.hour);
-    return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:00`;
-  });
-
+  const labels = rows.map(r => { const d = new Date(r.hour); return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:00`; });
   let data, label, color;
-  if (mode === 'cost') {
-    data = rows.map(r => r.cost_jpy);
-    label = '推定費用（円）';
-    color = '#f59e0b';
-  } else if (mode === 'tokens') {
-    data = rows.map(r => r.tokens_in + r.tokens_out);
-    label = 'トークン数（入出力合計）';
-    color = '#3b82f6';
-  } else {
-    data = rows.map(r => r.task_count);
-    label = 'タスク件数';
-    color = '#22c55e';
-  }
-
-  const totalIn = rows.reduce((s,r) => s + r.tokens_in, 0);
-  const totalOut = rows.reduce((s,r) => s + r.tokens_out, 0);
-  const totalTasks = rows.reduce((s,r) => s + r.task_count, 0);
-  const totalCost = rows.reduce((s,r) => s + r.cost_jpy, 0);
-
-  document.getElementById('chart-total-in').textContent = totalIn.toLocaleString();
-  document.getElementById('chart-total-out').textContent = totalOut.toLocaleString();
-  document.getElementById('chart-total-tasks').textContent = totalTasks.toLocaleString();
-  document.getElementById('chart-total-cost').textContent = `¥${totalCost.toLocaleString()}`;
-
+  if (mode === 'cost') { data = rows.map(r => r.cost_jpy); label = '推定費用（円）'; color = '#f59e0b'; }
+  else if (mode === 'tokens') { data = rows.map(r => r.tokens_in + r.tokens_out); label = 'トークン数（入出力合計）'; color = '#3b82f6'; }
+  else { data = rows.map(r => r.task_count); label = 'タスク件数'; color = '#22c55e'; }
+  document.getElementById('chart-total-in').textContent = rows.reduce((s,r) => s + r.tokens_in, 0).toLocaleString();
+  document.getElementById('chart-total-out').textContent = rows.reduce((s,r) => s + r.tokens_out, 0).toLocaleString();
+  document.getElementById('chart-total-tasks').textContent = rows.reduce((s,r) => s + r.task_count, 0).toLocaleString();
+  document.getElementById('chart-total-cost').textContent = `¥${rows.reduce((s,r) => s + r.cost_jpy, 0).toLocaleString()}`;
   const ctx = document.getElementById('token-chart').getContext('2d');
   if (_chartInstance) _chartInstance.destroy();
   _chartInstance = new Chart(ctx, {
     type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        label,
-        data,
-        borderColor: color,
-        backgroundColor: color + '22',
-        borderWidth: 2,
-        pointRadius: rows.length > 48 ? 0 : 3,
-        fill: true,
-        tension: 0.3,
-      }]
-    },
+    data: { labels, datasets: [{ label, data, borderColor: color, backgroundColor: color + '22', borderWidth: 2, pointRadius: rows.length > 48 ? 0 : 3, fill: true, tension: 0.3 }] },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { labels: { color: '#4a5568', font: { size: 12 } } },
-        tooltip: {
-          backgroundColor: '#fff',
-          borderColor: '#dde1e9',
-          borderWidth: 1,
-          titleColor: '#1a2035',
-          bodyColor: '#5a6680',
-        }
-      },
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#4a5568', font: { size: 12 } } }, tooltip: { backgroundColor: '#fff', borderColor: '#dde1e9', borderWidth: 1, titleColor: '#1a2035', bodyColor: '#5a6680' } },
       scales: {
-        x: {
-          ticks: { color: '#8a93a6', font: { size: 10 }, maxTicksLimit: 12 },
-          grid: { color: '#f0f2f5' }
-        },
-        y: {
-          ticks: { color: '#8a93a6', font: { size: 11 } },
-          grid: { color: '#f0f2f5' },
-          beginAtZero: true,
-        }
+        x: { ticks: { color: '#8a93a6', font: { size: 10 }, maxTicksLimit: 12 }, grid: { color: '#f0f2f5' } },
+        y: { ticks: { color: '#8a93a6', font: { size: 11 } }, grid: { color: '#f0f2f5' }, beginAtZero: true }
       }
     }
   });
@@ -1350,19 +1268,13 @@ function renderChartFromCache() {
 async function loadBilling() {
   try {
     const rows = await api('GET', '/api/v1/usage/all');
-    const tbody = document.getElementById('billing-body');
-
     let totalJpy = 0, totalIn = 0, totalOut = 0;
     rows.forEach(r => { totalJpy += r.cost_jpy; totalIn += r.tokens_in; totalOut += r.tokens_out; });
-
     document.getElementById('billing-total-jpy').textContent = `¥${totalJpy.toLocaleString()}`;
     document.getElementById('billing-total-in').textContent = totalIn.toLocaleString();
     document.getElementById('billing-total-out').textContent = totalOut.toLocaleString();
-
-    if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">データなし</td></tr>';
-      return;
-    }
+    const tbody = document.getElementById('billing-body');
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty-state">データなし</td></tr>'; return; }
     tbody.innerHTML = rows.map(r => `
       <tr>
         <td><strong>${esc(r.client_name)}</strong></td>
@@ -1370,14 +1282,9 @@ async function loadBilling() {
         <td style="text-align:right;color:#1a4a9a">${r.tokens_in.toLocaleString()}</td>
         <td style="text-align:right;color:#6d28d9">${r.tokens_out.toLocaleString()}</td>
         <td style="text-align:right">${r.done_tasks} / ${r.total_tasks}</td>
-        <td style="text-align:right;font-weight:600;color:${r.cost_jpy > 0 ? '#b7770d' : '#a0a8b8'}">
-          ¥${r.cost_jpy.toLocaleString()}
-        </td>
+        <td style="text-align:right;font-weight:600;color:${r.cost_jpy>0?'#b7770d':'#a0a8b8'}">¥${r.cost_jpy.toLocaleString()}</td>
       </tr>`).join('');
-  } catch(e) {
-    document.getElementById('billing-body').innerHTML =
-      `<tr><td colspan="6" class="empty-state" style="color:#ef4444">${esc(e.message)}</td></tr>`;
-  }
+  } catch(e) { document.getElementById('billing-body').innerHTML = `<tr><td colspan="6" class="empty-state" style="color:#ef4444">${esc(e.message)}</td></tr>`; }
 }
 
 // ── Init ──────────────────────────────────────────
