@@ -1320,6 +1320,47 @@ def chat_list_agents():
     return jsonify([dict(r) for r in rows])
 
 
+# ── AI実行（ローカルエージェントからVPS SDK経由でAI呼び出し） ────────────
+
+@app.route("/api/v1/ai/run", methods=["POST"])
+def ai_run():
+    """ローカルエージェントからプロンプトを受け取りAnthropicSDKで実行して返す。"""
+    token = client_token_from_request()
+    client = get_client_by_token(token) if token else None
+    if not client:
+        return jsonify({"error": "invalid token"}), 401
+
+    if not ANTHROPIC_API_KEY:
+        return jsonify({"error": "ANTHROPIC_API_KEY not configured on VPS"}), 503
+
+    data = request.get_json(force=True)
+    prompt = (data.get("prompt") or "").strip()
+    system = (data.get("system") or "").strip()
+    model = data.get("model") or ANTHROPIC_MODEL
+    if not prompt:
+        return jsonify({"error": "prompt is required"}), 400
+
+    try:
+        import anthropic as _ant
+        ant = _ant.Anthropic(api_key=ANTHROPIC_API_KEY)
+        kwargs = {
+            "model": model,
+            "max_tokens": 4096,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if system:
+            kwargs["system"] = system
+        resp = ant.messages.create(**kwargs)
+        output = "".join(b.text for b in resp.content if b.type == "text")
+        return jsonify({
+            "output": output,
+            "tokens_in": resp.usage.input_tokens,
+            "tokens_out": resp.usage.output_tokens,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── ログ ─────────────────────────────────────────────────────────────────
 
 @app.route("/api/v1/logs", methods=["POST"])
