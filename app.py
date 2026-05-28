@@ -916,14 +916,33 @@ def line_webhook_client(client_token):
                     (client["id"],),
                 ).fetchone()
             if agent:
+                # 直近完了タスクをコンテキストとして注入
+                recent = conn.execute(
+                    "SELECT result FROM tasks"
+                    " WHERE client_id=? AND agent_id=? AND status='completed'"
+                    " ORDER BY completed_at DESC LIMIT 1",
+                    (client["id"], agent["id"]),
+                ).fetchone()
+                context_str = ""
+                if recent and recent["result"]:
+                    try:
+                        recent_output = json.loads(recent["result"]).get("output", "")
+                        if recent_output:
+                            context_str = recent_output[:300]
+                    except Exception:
+                        pass
+
+                payload_dict = {"text": text, "reply_token": reply_token, "group_id": group_id}
+                if context_str:
+                    payload_dict["recent_context"] = context_str
+
                 task_id = str(uuid.uuid4())
                 conn.execute(
                     "INSERT INTO tasks (id, client_id, agent_id, type, payload, status, created_at)"
                     " VALUES (?, ?, ?, ?, ?, 'pending', ?)",
                     (
                         task_id, client["id"], agent["id"], "line_message",
-                        json.dumps({"text": text, "reply_token": reply_token, "group_id": group_id},
-                                   ensure_ascii=False),
+                        json.dumps(payload_dict, ensure_ascii=False),
                         now_iso(),
                     ),
                 )
