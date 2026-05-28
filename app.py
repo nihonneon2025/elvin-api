@@ -794,6 +794,18 @@ def line_webhook():
         reply_token = event.get("replyToken", "")
         group_id = event.get("source", {}).get("groupId", "")
 
+        # LINE WORKS リプライ（引用）コンテキストを抽出
+        _quote = msg.get("quote", msg.get("quotedMessage", {}))
+        if isinstance(_quote, dict):
+            _qt = (
+                (_quote.get("contents") or {}).get("text")
+                or _quote.get("contentPreview")
+                or _quote.get("text")
+                or ""
+            )
+            if _qt:
+                text = f"[引用: {_qt[:300]}]\n{text}"
+
         # ELVIN管理コマンド: 「ELVIN登録:会社名」または「ELVIN登録:会社名:顧客ID」
         if text.startswith("ELVIN登録:"):
             parts = [p.strip() for p in text.split(":")]
@@ -875,6 +887,19 @@ def line_webhook_client(client_token):
         reply_token = event.get("replyToken", "")
         source = event.get("source", {})
         group_id = source.get("groupId", "")
+
+        # LINE WORKS リプライ（引用）コンテキストを抽出
+        quote_text = ""
+        quote = msg.get("quote", msg.get("quotedMessage", {}))
+        if isinstance(quote, dict):
+            quote_text = (
+                (quote.get("contents") or {}).get("text")
+                or quote.get("contentPreview")
+                or quote.get("text")
+                or ""
+            )
+        if quote_text:
+            text = f"[引用: {quote_text[:300]}]\n{text}"
 
         with get_db() as conn:
             agent = None
