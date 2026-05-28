@@ -715,8 +715,10 @@ def complete_task(task_id):
     if success and task_row and task_row["type"] == "line_message":
         payload = json.loads(task_row["payload"])
         reply_text = (data.get("result") or {}).get("output") or (data.get("result") or {}).get("reply") or ""
-        # LINE返信はdaemon側のlineworks_send.py（Playwright）が担う。VPS側からのLINE API呼び出しは行わない
-        if reply_text and LINE_CHANNEL_ACCESS_TOKEN:
+        # DISPATCH/ADMINはシステム内部コマンドのためLINEに送信しない
+        # 通常の返答のみLINE Bot経由で返信（LINE WORKSはdaemon側が担う）
+        _is_internal = reply_text.startswith("DISPATCH:") or reply_text.startswith("ADMIN:")
+        if reply_text and LINE_CHANNEL_ACCESS_TOKEN and not _is_internal:
             line_reply(payload.get("reply_token", ""), reply_text)
 
     return jsonify({"ok": True})
