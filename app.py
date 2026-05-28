@@ -1141,8 +1141,13 @@ def chat_send():
             ),
         )
 
-    # ANTHROPIC_API_KEY があればVPS側で即時処理（バックグラウンド）
+    # ANTHROPIC_API_KEY があればVPS側で即時処理（runningに変えてからスレッド起動）
+    # 'pending'のままだとデーモンが横取りするため必ず'running'にしてから開始する
     if ANTHROPIC_API_KEY:
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE tasks SET status = 'running' WHERE id = ?", (task_id,)
+            )
         t = threading.Thread(
             target=_vps_process_chat,
             args=(task_id, client["id"], agent_id, message, system_prompt),
