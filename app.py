@@ -916,12 +916,12 @@ def line_webhook_client(client_token):
                     (client["id"],),
                 ).fetchone()
             if agent:
-                # 直近完了タスクをコンテキストとして注入
+                # 直近完了タスクをコンテキストとして注入（全エージェントから最新を取得）
                 recent = conn.execute(
                     "SELECT result FROM tasks"
-                    " WHERE client_id=? AND agent_id=? AND status='completed'"
+                    " WHERE client_id=? AND status='completed'"
                     " ORDER BY completed_at DESC LIMIT 1",
-                    (client["id"], agent["id"]),
+                    (client["id"],),
                 ).fetchone()
                 context_str = ""
                 if recent and recent["result"]:
