@@ -14,6 +14,7 @@ import hashlib
 import hmac as _hmac
 import json
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -931,6 +932,16 @@ def line_webhook_client(client_token):
                             context_str = recent_output[:300]
                     except Exception:
                         pass
+
+                # 曖昧指示（PDFにして/送って等）+ recent_contextにFILEパスがある場合、
+                # VPS側でテキストを事前展開してURVANに明確な指示を渡す
+                _ctx_file = re.search(r'\[FILE:([^\]]+)\]', context_str) if context_str else None
+                if _ctx_file and text:
+                    _fp = _ctx_file.group(1).strip()
+                    if re.search(r'PDF|ＰＤＦ', text, re.IGNORECASE):
+                        text = f"{_fp} をPDFに変換してAI事業グループに送って"
+                    elif any(kw in text for kw in ["送って", "転送", "これ", "さっきの", "それ"]):
+                        text = f"{_fp} をAI事業グループに送って"
 
                 payload_dict = {"text": text, "reply_token": reply_token, "group_id": group_id}
                 if context_str:
