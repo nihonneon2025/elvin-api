@@ -33,6 +33,7 @@ DAEMON_SECRET = os.environ.get("DAEMON_SECRET", "changeme")
 PORT = int(os.environ.get("PORT", 5050))
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+BRAVE_API_KEY = os.environ.get("BRAVE_API_KEY", "")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 
@@ -1465,6 +1466,42 @@ def ai_run():
             "tokens_in": resp.usage.input_tokens,
             "tokens_out": resp.usage.output_tokens,
         })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Web検索プロキシ（顧客PC側にAPIキー不要） ─────────────────────────────
+
+@app.route("/api/v1/search", methods=["POST"])
+def web_search_proxy():
+    """daemonからの検索リクエストをBrave Search APIに中継する。
+    顧客側にBrave APIキーが不要になる。
+    """
+    token = client_token_from_request()
+    client = get_client_by_token(token) if token else None
+    if not client:
+        return jsonify({"error": "invalid token"}), 401
+
+    if not BRAVE_API_KEY:
+        return jsonify({"error": "BRAVE_API_KEY not configured on VPS"}), 503
+
+    data = request.get_json(force=True)
+    query = (data.get("query") or "").strip()
+    count = min(int(data.get("count", 5)), 10)
+    if not query:
+        return jsonify({"error": "query is required"}), 400
+
+    try:
+        import urllib.request as _ur
+        import urllib.parse as _up
+        req = _ur.Request(
+            f"https://api.search.brave.com/res/v1/web/search?q={_up.quote_plus(query)}&count={count}",
+            headers={"Accept": "application/json", "X-Subscription-Token": BRAVE_API_KEY},
+        )
+        with _ur.urlopen(req, timeout=10) as resp:
+            results = __import__("json").loads(resp.read().decode()).get("web", {}).get("results", [])
+        lines = [f"・{r.get('title','')}\n  {r.get('url','')}\n  {r.get('description','')}" for r in results]
+        return jsonify({"results": "\n\n".join(lines) if lines else "結果なし"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
