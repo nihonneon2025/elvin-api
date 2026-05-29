@@ -407,9 +407,9 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v6c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 11v6c0 1.66 4.03 3 9 3s9-1.34 9-3v-6"/></svg>
         AI記憶管理
       </div>
-      <div class="nav-item" onclick="showTab('conversations',this)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        会話履歴
+      <div class="nav-item" onclick="showTab('staff',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        スタッフ
       </div>
       <div class="nav-item" onclick="showTab('tasks',this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
@@ -605,19 +605,22 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
       </div>
     </div>
 
-    <!-- ── 会話履歴 ── -->
-    <div id="tab-conversations" style="display:none">
+    <!-- ── スタッフ ── -->
+    <div id="tab-staff" style="display:none">
       <div class="page-header">
-        <div class="page-title">会話履歴</div>
+        <div class="page-title">登録スタッフ</div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <select id="conv-client-filter" onchange="loadConversations()" style="padding:7px 12px;min-width:180px">
+          <select id="staff-client-filter" onchange="loadStaff()" style="padding:7px 12px;min-width:180px">
             <option value="">顧客を選択</option>
           </select>
-          <button class="btn btn-ghost btn-sm" onclick="loadConversations()">更新</button>
+          <button class="btn btn-ghost btn-sm" onclick="loadStaff()">更新</button>
         </div>
       </div>
-      <div id="conversations-container">
-        <div class="empty-state"><div class="empty-state-icon">💬</div><div>顧客を選択してください</div></div>
+      <div style="padding:8px 0 12px;color:#64748b;font-size:13px">
+        スタッフが LINE で「名前登録:田中」と送ると自動登録されます
+      </div>
+      <div id="staff-container">
+        <div class="empty-state"><div class="empty-state-icon">👥</div><div>顧客を選択してください</div></div>
       </div>
     </div>
 
@@ -858,7 +861,7 @@ function showTab(name, el) {
   if (name === 'chart') { populateChartClientFilter(); loadChart(); }
   if (name === 'billing') loadBilling();
   if (name === 'memories') populateMemClientFilter();
-  if (name === 'conversations') populateConvClientFilter();
+  if (name === 'staff') populateStaffClientFilter();
 }
 
 // ── Dashboard ────────────────────────────────────
@@ -1363,64 +1366,56 @@ async function deleteMemory(clientId, category, key) {
   });
 }
 
-// ── 会話履歴 ─────────────────────────────────────
-async function populateConvClientFilter() {
+// ── スタッフ ─────────────────────────────────────
+async function populateStaffClientFilter() {
   if (!STATUS_DATA.length) { try { STATUS_DATA = await api('GET', '/api/v1/status'); } catch {} }
-  const sel = document.getElementById('conv-client-filter');
+  const sel = document.getElementById('staff-client-filter');
   const cur = sel.value;
   sel.innerHTML = '<option value="">顧客を選択</option>' +
     STATUS_DATA.map(c => `<option value="${esc(c.id)}" ${c.id===cur?'selected':''}>${esc(c.name)}</option>`).join('');
 }
 
-async function loadConversations() {
-  const clientId = document.getElementById('conv-client-filter').value;
-  const container = document.getElementById('conversations-container');
+async function loadStaff() {
+  const clientId = document.getElementById('staff-client-filter').value;
+  const container = document.getElementById('staff-container');
   if (!clientId) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">💬</div><div>顧客を選択してください</div></div>';
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">👥</div><div>顧客を選択してください</div></div>';
     return;
   }
   container.innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
   try {
-    const convs = await api('GET', `/api/v1/clients/${clientId}/conversations`);
-    const clientInfo = STATUS_DATA.find(s => s.id === clientId) || {};
-    const clientName = clientInfo.name || clientId;
-    const modelShort = (clientInfo.anthropic_model || '').replace('claude-','').replace('-20251001','').replace('-20250929','') || '未設定';
-    const clearBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <div style="font-size:12px;color:#64748b">使用モデル: <span style="color:#7c3aed;font-weight:600">${esc(modelShort)}</span></div>
-      <button class="btn btn-danger btn-sm" onclick="clearConversations('${esc(clientId)}','${esc(clientName)}')">「${esc(clientName)}」の会話履歴を全削除</button>
-    </div>`;
-    if (!convs.length) {
-      container.innerHTML = clearBtn + '<div class="empty-state"><div class="empty-state-icon">💬</div><div>会話履歴なし</div></div>';
+    const staff = await api('GET', `/api/v1/clients/${clientId}/staff`);
+    if (!staff.length) {
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">👥</div><div>登録スタッフなし<br><small style="color:#94a3b8">LINEで「名前登録:田中」と送ると登録されます</small></div></div>';
       return;
     }
-    const byAgent = {};
-    convs.forEach(c => {
-      const k = c.agent_id || 'unknown';
-      if (!byAgent[k]) byAgent[k] = { name: c.agent_name || k, msgs: [] };
-      byAgent[k].msgs.push(c);
-    });
-    container.innerHTML = clearBtn + Object.entries(byAgent).map(([, ag]) => `
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-header"><div class="card-title">${esc(ag.name)}</div><div class="text-muted text-sm">${ag.msgs.length}件</div></div>
-        <div style="padding:16px">${ag.msgs.map(m => `
-          <div class="conv-msg">
-            <span class="badge ${m.role==='user'?'badge-blue':'badge-green'}" style="flex-shrink:0;margin-top:2px">${m.role==='user'?'USER':'AI'}</span>
-            <div><div class="conv-msg-content">${esc(m.content)}</div><div class="cell-muted" style="font-size:11px;margin-top:3px">${fmtTime(m.created_at)}</div></div>
-          </div>`).join('')}
-        </div>
-      </div>`).join('');
+    container.innerHTML = `<div class="card"><table style="width:100%;border-collapse:collapse;font-size:14px">
+      <thead><tr style="border-bottom:1px solid #e2e8f0">
+        <th style="padding:10px 16px;text-align:left;color:#64748b;font-weight:500">名前</th>
+        <th style="padding:10px 16px;text-align:left;color:#64748b;font-weight:500">LINE ユーザーID</th>
+        <th style="padding:10px 16px;text-align:left;color:#64748b;font-weight:500">登録日時</th>
+        <th style="padding:10px 4px"></th>
+      </tr></thead>
+      <tbody>${staff.map(s => `
+        <tr style="border-bottom:1px solid #f1f5f9">
+          <td style="padding:10px 16px;font-weight:600">${esc(s.name)}</td>
+          <td style="padding:10px 16px;color:#64748b;font-size:12px;font-family:monospace">${esc(s.line_user_id)}</td>
+          <td style="padding:10px 16px;color:#94a3b8;font-size:12px">${fmtTime(s.created_at)}</td>
+          <td style="padding:10px 4px"><button class="btn btn-danger btn-sm" onclick="deleteStaff('${esc(clientId)}','${esc(s.id)}','${esc(s.name)}')">削除</button></td>
+        </tr>`).join('')}
+      </tbody></table></div>`;
   } catch(e) { container.innerHTML = `<div class="empty-state text-muted">エラー: ${esc(e.message)}</div>`; }
 }
 
-async function clearConversations(clientId, clientName) {
+async function deleteStaff(clientId, staffId, staffName) {
   showConfirm({
-    icon: '💬', title: `「${clientName}」の会話履歴を全削除しますか？`,
-    msg: 'AIとの全会話履歴が削除されます。この操作は取り消せません。',
-    okLabel: '全削除する', okClass: 'btn-danger',
+    icon: '👤', title: `「${staffName}」を削除しますか？`,
+    msg: '削除するとLINEからの発信者名が認識されなくなります。',
+    okLabel: '削除する', okClass: 'btn-danger',
     onOk: async () => {
       try {
-        await api('DELETE', `/api/v1/clients/${encodeURIComponent(clientId)}/conversations`);
-        toast('会話履歴を削除しました'); loadConversations();
+        await api('DELETE', `/api/v1/clients/${encodeURIComponent(clientId)}/staff/${encodeURIComponent(staffId)}`);
+        toast(`「${staffName}」を削除しました`); loadStaff();
       } catch(e) { toast('エラー: ' + e.message, true); }
     }
   });

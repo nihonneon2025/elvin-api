@@ -156,6 +156,15 @@ def init_db():
                 content    TEXT NOT NULL,
                 created_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS staff (
+                id            TEXT PRIMARY KEY,
+                client_id     TEXT NOT NULL,
+                line_user_id  TEXT NOT NULL,
+                name          TEXT NOT NULL,
+                created_at    TEXT,
+                UNIQUE(client_id, line_user_id),
+                FOREIGN KEY (client_id) REFERENCES clients(id)
+            );
         """)
         # 既存DBへのカラム追加（冪等）
         for sql in [
@@ -957,6 +966,7 @@ def line_webhook_client(client_token):
         reply_token = event.get("replyToken", "")
         source = event.get("source", {})
         group_id = source.get("groupId", "")
+        line_user_id = source.get("userId", "")
 
         # LINE WORKS リプライ（引用）コンテキストを抽出
         quote_text = ""
@@ -971,7 +981,34 @@ def line_webhook_client(client_token):
         if quote_text:
             text = f"[引用: {quote_text[:300]}]\n{text}"
 
+        # 名前登録コマンド（スタッフが初回に送る）
+        if text.startswith("名前登録:"):
+            parts = text.split(":", 1)
+            staff_name = parts[1].strip() if len(parts) > 1 else ""
+            if staff_name and line_user_id:
+                with get_db() as conn:
+                    conn.execute(
+                        "INSERT INTO staff (id, client_id, line_user_id, name, created_at)"
+                        " VALUES (?, ?, ?, ?, ?)"
+                        " ON CONFLICT(client_id, line_user_id) DO UPDATE SET name=excluded.name",
+                        (str(uuid.uuid4()), client["id"], line_user_id, staff_name, now_iso())
+                    )
+                line_reply(reply_token, f"✅ 名前を「{staff_name}」として登録しました\n以降のメッセージは{staff_name}として処理されます")
+            else:
+                line_reply(reply_token, "❌ 名前を入力してください\n例: 名前登録:田中")
+            continue
+
         with get_db() as conn:
+            # スタッフ名を取得
+            requester_name = ""
+            if line_user_id:
+                staff_row = conn.execute(
+                    "SELECT name FROM staff WHERE client_id = ? AND line_user_id = ?",
+                    (client["id"], line_user_id)
+                ).fetchone()
+                if staff_row:
+                    requester_name = staff_row["name"]
+
             agent = None
             if group_id:
                 agent = conn.execute(
@@ -1013,6 +1050,8 @@ def line_webhook_client(client_token):
                         text = f"{_fp} をAI事業グループに送って"
 
                 payload_dict = {"text": text, "reply_token": reply_token, "group_id": group_id}
+                if requester_name:
+                    payload_dict["requester_name"] = requester_name
                 if context_str:
                     payload_dict["recent_context"] = context_str
 
@@ -1765,6 +1804,28 @@ def delete_memory(client_id, category, key):
             "DELETE FROM memories WHERE client_id = ? AND category = ? AND key = ?",
             (client_id, category, key),
         )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/v1/clients/<client_id>/staff", methods=["GET"])
+@require_daemon
+def list_staff(client_id):
+    """登録済みスタッフ一覧"""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, line_user_id, name, created_at FROM staff"
+            " WHERE client_id = ? ORDER BY created_at ASC",
+            (client_id,),
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/clients/<client_id>/staff/<staff_id>", methods=["DELETE"])
+@require_daemon
+def delete_staff(client_id, staff_id):
+    """スタッフ削除"""
+    with get_db() as conn:
+        conn.execute("DELETE FROM staff WHERE client_id = ? AND id = ?", (client_id, staff_id))
     return jsonify({"ok": True})
 
 
