@@ -45,8 +45,8 @@ _MODEL_PRICING = {
     "claude-opus-4-7":           (5.0, 25.0),
     "claude-opus-4-6":           (5.0, 25.0),
 }
-_DEFAULT_COST_INPUT_PER_1M  = 3.0   # 不明モデルはSonnet相当で概算
-_DEFAULT_COST_OUTPUT_PER_1M = 15.0
+_DEFAULT_COST_INPUT_PER_1M  = 1.0   # 不明モデルはHaiku相当で概算
+_DEFAULT_COST_OUTPUT_PER_1M = 5.0
 _USD_TO_JPY = 155
 
 
