@@ -813,7 +813,12 @@ def heartbeat():
         conn.execute(
             "UPDATE clients SET last_seen = ? WHERE id = ?", (now_iso(), client["id"])
         )
-    return jsonify({"ok": True, "client_id": client["id"]})
+    return jsonify({
+        "ok": True,
+        "client_id": client["id"],
+        "anthropic_api_key": client["anthropic_api_key"] or "",
+        "anthropic_model": client["anthropic_model"] or "",
+    })
 
 
 # ── LINE Webhook ─────────────────────────────────────────────────────────
