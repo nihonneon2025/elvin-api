@@ -1494,7 +1494,9 @@ def web_search_proxy():
     import urllib.parse as _up
     import json as _json
 
-    # Google Custom Search（最優先）
+    import re as _re
+
+    # Google Custom Search（最優先・結果がある場合のみ返す）
     if GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_CX:
         try:
             url = (
@@ -1505,11 +1507,38 @@ def web_search_proxy():
             with _ur.urlopen(_ur.Request(url), timeout=10) as resp:
                 items = _json.loads(resp.read().decode()).get("items", [])
             lines = [f"・{r.get('title','')}\n  {r.get('link','')}\n  {r.get('snippet','')}" for r in items]
-            return jsonify({"results": "\n\n".join(lines) if lines else "結果なし", "source": "google"})
+            if lines:
+                return jsonify({"results": "\n\n".join(lines), "source": "google"})
         except Exception:
             pass  # フォールバックへ
 
-    # DuckDuckGo Instant Answers（APIキーなし時のフォールバック）
+    # DuckDuckGo HTML検索（本物の検索結果・APIキー不要）
+    try:
+        ddg_req = _ur.Request(
+            f"https://html.duckduckgo.com/html/?q={_up.quote_plus(query)}&kl=jp-jp",
+            headers={
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
+                "Accept-Language": "ja,en-US;q=0.7,en;q=0.3",
+            },
+        )
+        with _ur.urlopen(ddg_req, timeout=10) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+        titles = _re.findall(r'class="result__a"[^>]*>(.*?)</a>', html)
+        urls_found = _re.findall(r'class="result__url"[^>]*>\s*([^\s<]+)', html)
+        snips = _re.findall(r'class="result__snippet"[^>]*>(.*?)</a>', html, _re.DOTALL)
+        lines = []
+        for i in range(min(len(titles), count)):
+            title = _re.sub(r"<[^>]+>", "", titles[i]).strip()
+            url_str = urls_found[i].strip() if i < len(urls_found) else ""
+            snip = _re.sub(r"<[^>]+>", "", snips[i]).strip() if i < len(snips) else ""
+            if title or snip:
+                lines.append(f"・{title}\n  {url_str}\n  {snip}")
+        if lines:
+            return jsonify({"results": "\n\n".join(lines), "source": "duckduckgo_html"})
+    except Exception:
+        pass
+
+    # DuckDuckGo Instant Answers（最終フォールバック）
     try:
         req = _ur.Request(
             f"https://api.duckduckgo.com/?q={_up.quote_plus(query)}&format=json&no_html=1&skip_disambig=1",
