@@ -762,6 +762,31 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
   </div>
 </div>
 
+<!-- 顧客設定モーダル -->
+<div id="client-settings-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;padding:28px 32px;width:480px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    <div style="font-size:17px;font-weight:700;color:#1a3557;margin-bottom:20px" id="cs-modal-title">顧客設定</div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:12px;font-weight:600;color:#64748b;display:block;margin-bottom:6px">Anthropic APIキー</label>
+      <input type="password" id="cs-api-key" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;font-family:monospace" placeholder="sk-ant-api03-..." autocomplete="off">
+      <div style="font-size:11px;color:#94a3b8;margin-top:4px">未入力のままにすると変更されません</div>
+    </div>
+    <div style="margin-bottom:24px">
+      <label style="font-size:12px;font-weight:600;color:#64748b;display:block;margin-bottom:6px">AIモデル</label>
+      <select id="cs-model" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px">
+        <option value="">デフォルト（VPS設定を使用）</option>
+        <option value="claude-haiku-4-5-20251001">Haiku 4.5（高速・低コスト）</option>
+        <option value="claude-sonnet-4-6">Sonnet 4.6（バランス）</option>
+        <option value="claude-opus-4-7">Opus 4.7（高精度）</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="document.getElementById('client-settings-overlay').style.display='none'">キャンセル</button>
+      <button class="btn btn-primary" id="cs-save-btn">保存</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const BASE = '';
 let SECRET = 'elvin2026';
@@ -934,6 +959,7 @@ function renderClientCard(c) {
         ${statusBadge} ${mgrBadge}
         <button class="btn btn-ghost btn-sm" onclick="showUsageModal('${esc(c.id)}','${esc(c.name)}')">利用状況</button>
         <button class="btn btn-ghost btn-sm" onclick="showTokenModal('${esc(c.id)}')">トークン</button>
+        <button class="btn btn-ghost btn-sm" onclick="showClientSettingsModal('${esc(c.id)}','${esc(c.name)}','${esc(c.anthropic_api_key||'')}','${esc(c.anthropic_model||'')}')">設定</button>
         <button class="btn btn-sm ${suspended?'btn-success':'btn-danger'}" onclick="toggleClientStatus('${esc(c.id)}','${esc(c.status||'active')}','${esc(c.name)}')">${suspended?'AI再開':'AI停止'}</button>
         <button class="btn btn-sm ${mgrSuspended?'btn-success':'btn-warning'}" onclick="toggleManagerStatus('${esc(c.id)}','${esc(c.manager_status||'active')}','${esc(c.name)}')">${mgrSuspended?'MANAGER再開':'MANAGER停止'}</button>
       </div>
@@ -1039,6 +1065,30 @@ async function showTokenModal(clientId) {
 }
 
 function closeModal() { document.getElementById('modal-overlay').style.display = 'none'; }
+
+function showClientSettingsModal(clientId, clientName, currentKey, currentModel) {
+  document.getElementById('cs-modal-title').textContent = `設定 — ${clientName}`;
+  document.getElementById('cs-api-key').value = '';  // セキュリティ上、既存キーは表示しない
+  const sel = document.getElementById('cs-model');
+  sel.value = currentModel || '';
+  const overlay = document.getElementById('client-settings-overlay');
+  overlay.style.display = 'flex';
+  document.getElementById('cs-save-btn').onclick = async () => {
+    const newKey = document.getElementById('cs-api-key').value.trim();
+    const newModel = document.getElementById('cs-model').value;
+    const payload = {};
+    if (newKey) payload.anthropic_api_key = newKey;
+    if (newModel !== currentModel) payload.anthropic_model = newModel;
+    if (!Object.keys(payload).length) { overlay.style.display = 'none'; return; }
+    try {
+      await api('PATCH', `/api/v1/clients/${clientId}/settings`, payload);
+      overlay.style.display = 'none';
+      loadClients();
+    } catch(e) {
+      alert('保存失敗: ' + e.message);
+    }
+  };
+}
 
 async function openEditModal(agentId, agentName) {
   EDIT_AGENT_ID = agentId;

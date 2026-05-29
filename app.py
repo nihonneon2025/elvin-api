@@ -293,6 +293,26 @@ def update_manager_status(client_id):
     return jsonify({"ok": True, "client_id": client_id, "manager_status": new_status})
 
 
+@app.route("/api/v1/clients/<client_id>/settings", methods=["PATCH"])
+@require_daemon
+def update_client_settings(client_id):
+    """顧客のAnthropicAPIキー・モデルを更新"""
+    data = request.get_json(force=True)
+    allowed = {"anthropic_api_key", "anthropic_model"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if not updates:
+        return jsonify({"error": "no valid fields"}), 400
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    with get_db() as conn:
+        cur = conn.execute(
+            f"UPDATE clients SET {set_clause} WHERE id = ?",
+            list(updates.values()) + [client_id],
+        )
+        if cur.rowcount == 0:
+            return jsonify({"error": "client not found"}), 404
+    return jsonify({"ok": True, "client_id": client_id, **updates})
+
+
 @app.route("/api/v1/clients/<client_id>/usage", methods=["GET"])
 @require_daemon
 def client_usage(client_id):
@@ -1016,7 +1036,7 @@ def line_webhook_client(client_token):
 def status():
     with get_db() as conn:
         clients = conn.execute(
-            "SELECT id, name, status, manager_status, last_seen, anthropic_model FROM clients ORDER BY last_seen DESC"
+            "SELECT id, name, status, manager_status, last_seen, anthropic_model, anthropic_api_key FROM clients ORDER BY last_seen DESC"
         ).fetchall()
         agents = conn.execute(
             "SELECT id, client_id, name, role, enabled, last_seen FROM agents ORDER BY client_id, created_at"
@@ -1049,6 +1069,7 @@ def status():
             "manager_status": c["manager_status"] or "active",
             "last_seen": c["last_seen"],
             "anthropic_model": c["anthropic_model"] or "",
+            "anthropic_api_key": c["anthropic_api_key"] or "",
             "agents": agent_map.get(c["id"], []),
         }
         for c in clients
