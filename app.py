@@ -1006,7 +1006,7 @@ def line_webhook_client(client_token):
 def status():
     with get_db() as conn:
         clients = conn.execute(
-            "SELECT id, name, status, manager_status, last_seen FROM clients ORDER BY last_seen DESC"
+            "SELECT id, name, status, manager_status, last_seen, anthropic_model FROM clients ORDER BY last_seen DESC"
         ).fetchall()
         agents = conn.execute(
             "SELECT id, client_id, name, role, enabled, last_seen FROM agents ORDER BY client_id, created_at"
@@ -1038,6 +1038,7 @@ def status():
             "status": c["status"] or "active",
             "manager_status": c["manager_status"] or "active",
             "last_seen": c["last_seen"],
+            "anthropic_model": c["anthropic_model"] or "",
             "agents": agent_map.get(c["id"], []),
         }
         for c in clients

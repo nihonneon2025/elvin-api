@@ -927,7 +927,7 @@ function renderClientCard(c) {
     <div class="card-header">
       <div>
         <div class="card-title">${esc(c.name)}</div>
-        <div style="font-size:11px;color:#64748b;margin-top:3px">ID: ${esc(c.id)} &nbsp;|&nbsp; 最終接続: ${c.last_seen ? fmtTime(c.last_seen) : '未接続'}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:3px">ID: ${esc(c.id)} &nbsp;|&nbsp; 最終接続: ${c.last_seen ? fmtTime(c.last_seen) : '未接続'} &nbsp;|&nbsp; モデル: <span style="color:#7c3aed;font-weight:600">${esc((c.anthropic_model||'未設定').replace('claude-','').replace('-20251001','').replace('-20250929',''))}</span></div>
       </div>
       <div class="flex-center" style="gap:8px;flex-wrap:wrap">
         ${statusBadge} ${mgrBadge}
@@ -1331,8 +1331,11 @@ async function loadConversations() {
   container.innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
   try {
     const convs = await api('GET', `/api/v1/clients/${clientId}/conversations`);
-    const clientName = (STATUS_DATA.find(s => s.id === clientId) || {}).name || clientId;
-    const clearBtn = `<div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+    const clientInfo = STATUS_DATA.find(s => s.id === clientId) || {};
+    const clientName = clientInfo.name || clientId;
+    const modelShort = (clientInfo.anthropic_model || '').replace('claude-','').replace('-20251001','').replace('-20250929','') || '未設定';
+    const clearBtn = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div style="font-size:12px;color:#64748b">使用モデル: <span style="color:#7c3aed;font-weight:600">${esc(modelShort)}</span></div>
       <button class="btn btn-danger btn-sm" onclick="clearConversations('${esc(clientId)}','${esc(clientName)}')">「${esc(clientName)}」の会話履歴を全削除</button>
     </div>`;
     if (!convs.length) {
