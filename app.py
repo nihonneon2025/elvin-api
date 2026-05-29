@@ -33,7 +33,6 @@ DAEMON_SECRET = os.environ.get("DAEMON_SECRET", "changeme")
 PORT = int(os.environ.get("PORT", 5050))
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
-BRAVE_API_KEY = os.environ.get("BRAVE_API_KEY", "")
 GOOGLE_SEARCH_API_KEY = os.environ.get("GOOGLE_SEARCH_API_KEY", "")
 GOOGLE_SEARCH_CX = os.environ.get("GOOGLE_SEARCH_CX", "")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
@@ -162,7 +161,6 @@ def init_db():
         for sql in [
             "ALTER TABLE clients ADD COLUMN status TEXT DEFAULT 'active'",
             "ALTER TABLE clients ADD COLUMN manager_status TEXT DEFAULT 'active'",
-            "ALTER TABLE clients ADD COLUMN line_channel_access_token TEXT DEFAULT ''",
             "ALTER TABLE clients ADD COLUMN anthropic_api_key TEXT DEFAULT ''",
             "ALTER TABLE clients ADD COLUMN anthropic_model TEXT DEFAULT ''",
             "ALTER TABLE tasks ADD COLUMN tokens_in INTEGER DEFAULT 0",
@@ -751,15 +749,6 @@ def complete_task(task_id):
                 client["id"],
             ),
         )
-
-    if success and task_row and task_row["type"] == "line_message":
-        payload = json.loads(task_row["payload"])
-        reply_text = (data.get("result") or {}).get("output") or (data.get("result") or {}).get("reply") or ""
-        # DISPATCH/ADMINはシステム内部コマンドのためLINEに送信しない
-        # 通常の返答のみLINE Bot経由で返信（LINE WORKSはdaemon側が担う）
-        _is_internal = reply_text.startswith("DISPATCH:") or reply_text.startswith("ADMIN:")
-        if reply_text and LINE_CHANNEL_ACCESS_TOKEN and not _is_internal:
-            line_reply(payload.get("reply_token", ""), reply_text)
 
     return jsonify({"ok": True})
 
