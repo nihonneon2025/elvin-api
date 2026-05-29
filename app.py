@@ -1550,7 +1550,7 @@ def stats_tokens():
         t_in = r["tokens_in"] or 0
         t_out = r["tokens_out"] or 0
         model = r["model"] or ""
-        p_in, p_out = _get_model_pricing(model)
+        p_in, p_out = _pricing(model)
         cost_usd = (t_in * p_in + t_out * p_out) / 1_000_000
         hourly[h]["tokens_in"] += t_in
         hourly[h]["tokens_out"] += t_out
