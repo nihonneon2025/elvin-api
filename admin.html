@@ -635,7 +635,7 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
       <div class="card">
         <table>
           <thead><tr>
-            <th>日時</th><th>顧客</th><th>エージェント</th><th>種別</th><th>ステータス</th><th>トークン</th><th>詳細</th>
+            <th>日時</th><th>顧客</th><th>エージェント</th><th>種別</th><th>ステータス</th><th>モデル</th><th>トークン</th><th>詳細</th>
           </tr></thead>
           <tbody id="tasks-body">
             <tr><td colspan="7" class="empty-state">読み込み中...</td></tr>
@@ -1396,12 +1396,14 @@ async function loadTasks() {
     tbody.innerHTML = tasks.map(t => {
       const badgeCls = t.status==='completed'?'badge-green':t.status==='failed'?'badge-red':t.status==='running'?'badge-blue':'badge-yellow';
       const statusLabel = {'completed':'完了','failed':'失敗','running':'実行中','pending':'待機中'}[t.status] || t.status;
+      const modelShort = (t.model||'').replace('claude-','').replace('-20251001','').replace('-20250929','') || '—';
       return `<tr>
         <td class="cell-muted">${t.created_at ? fmtTime(t.created_at) : '—'}</td>
         <td class="cell-mono">${esc(t.client_id)}</td>
         <td>${esc(t.agent_name || '—')}</td>
         <td><code style="font-size:11px;color:#94a3b8">${esc(t.type)}</code></td>
         <td><span class="badge ${badgeCls}">${statusLabel}</span></td>
+        <td><span style="font-size:10px;color:#7c3aed">${esc(modelShort)}</span></td>
         <td>${(t.tokens_in||t.tokens_out) ? `<span style="font-size:10px;color:#64748b">${t.tokens_in||0}↑ ${t.tokens_out||0}↓</span>` : '—'}</td>
         <td>${t.error?`<span title="${esc(t.error)}" style="cursor:help;color:#ef4444">⚠</span>`:''}${t.completed_at?fmtTime(t.completed_at):''}</td>
       </tr>`;
