@@ -451,7 +451,7 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
         <div class="card-header"><div class="card-title">顧客一覧</div></div>
         <table>
           <thead><tr>
-            <th>状態</th><th>会社名</th><th>顧客ID</th><th>エージェント</th><th>最終接続</th>
+            <th>状態</th><th>会社名</th><th>顧客ID</th><th>エージェント</th><th>モデル</th><th>最終接続</th>
           </tr></thead>
           <tbody id="dash-clients-body">
             <tr><td colspan="5" class="empty-state">読み込み中...</td></tr>
@@ -855,7 +855,7 @@ async function loadDashboard() {
     document.getElementById('stat-errors').textContent = totalErrors;
     const tbody = document.getElementById('dash-clients-body');
     if (data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty-state text-muted">顧客なし</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state text-muted">顧客なし</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(c => {
@@ -870,6 +870,7 @@ async function loadDashboard() {
         <td><strong>${esc(c.name)}</strong></td>
         <td class="cell-mono">${esc(c.id)}</td>
         <td>${c.agents.length}</td>
+        <td><span style="font-size:11px;color:#7c3aed;font-weight:600">${esc((c.anthropic_model||'未設定').replace('claude-','').replace('-20251001','').replace('-20250929',''))}</span></td>
         <td class="cell-muted">${c.last_seen ? fmtTime(c.last_seen) : '未接続'}</td>
       </tr>`;
     }).join('');
