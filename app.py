@@ -1484,9 +1484,6 @@ def web_search_proxy():
     if not client:
         return jsonify({"error": "invalid token"}), 401
 
-    if not BRAVE_API_KEY:
-        return jsonify({"error": "BRAVE_API_KEY not configured on VPS"}), 503
-
     data = request.get_json(force=True)
     query = (data.get("query") or "").strip()
     count = min(int(data.get("count", 5)), 10)
