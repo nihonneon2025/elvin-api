@@ -1513,16 +1513,19 @@ def web_search_proxy():
             pass  # フォールバックへ
 
     # DuckDuckGo HTML検索（本物の検索結果・APIキー不要）
+    _ddg_err = ""
     try:
         ddg_req = _ur.Request(
             f"https://html.duckduckgo.com/html/?q={_up.quote_plus(query)}&kl=jp-jp",
             headers={
                 "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
                 "Accept-Language": "ja,en-US;q=0.7,en;q=0.3",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             },
         )
-        with _ur.urlopen(ddg_req, timeout=10) as resp:
+        with _ur.urlopen(ddg_req, timeout=15) as resp:
             html = resp.read().decode("utf-8", errors="replace")
+        _ddg_err = f"html_len={len(html)},result__a={html.count('result__a')}"
         titles = _re.findall(r'class="result__a"[^>]*>(.*?)</a>', html)
         urls_found = _re.findall(r'class="result__url"[^>]*>\s*([^\s<]+)', html)
         snips = _re.findall(r'class="result__snippet"[^>]*>(.*?)</a>', html, _re.DOTALL)
@@ -1535,8 +1538,8 @@ def web_search_proxy():
                 lines.append(f"・{title}\n  {url_str}\n  {snip}")
         if lines:
             return jsonify({"results": "\n\n".join(lines), "source": "duckduckgo_html"})
-    except Exception:
-        pass
+    except Exception as _e:
+        _ddg_err = str(_e)[:200]
 
     # DuckDuckGo Instant Answers（最終フォールバック）
     try:
@@ -1554,7 +1557,7 @@ def web_search_proxy():
         for topic in data.get("RelatedTopics", [])[:count]:
             if isinstance(topic, dict) and topic.get("Text"):
                 snippets.append(f"・{topic['Text'][:200]}")
-        results_text = "\n".join(snippets[:count + 1]) if snippets else "結果なし"
+        results_text = "\n".join(snippets[:count + 1]) if snippets else f"結果なし[ddg_debug:{_ddg_err}]"
         return jsonify({"results": results_text, "source": "duckduckgo"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
