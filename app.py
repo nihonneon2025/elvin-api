@@ -1491,17 +1491,42 @@ def web_search_proxy():
     if not query:
         return jsonify({"error": "query is required"}), 400
 
+    import urllib.request as _ur
+    import urllib.parse as _up
+    import json as _json
+
+    # Brave Search（APIキーあり時）
+    if BRAVE_API_KEY:
+        try:
+            req = _ur.Request(
+                f"https://api.search.brave.com/res/v1/web/search?q={_up.quote_plus(query)}&count={count}",
+                headers={"Accept": "application/json", "X-Subscription-Token": BRAVE_API_KEY},
+            )
+            with _ur.urlopen(req, timeout=10) as resp:
+                results = _json.loads(resp.read().decode()).get("web", {}).get("results", [])
+            lines = [f"・{r.get('title','')}\n  {r.get('url','')}\n  {r.get('description','')}" for r in results]
+            return jsonify({"results": "\n\n".join(lines) if lines else "結果なし", "source": "brave"})
+        except Exception:
+            pass  # フォールバックへ
+
+    # DuckDuckGo Instant Answers（APIキーなし時のフォールバック）
     try:
-        import urllib.request as _ur
-        import urllib.parse as _up
         req = _ur.Request(
-            f"https://api.search.brave.com/res/v1/web/search?q={_up.quote_plus(query)}&count={count}",
-            headers={"Accept": "application/json", "X-Subscription-Token": BRAVE_API_KEY},
+            f"https://api.duckduckgo.com/?q={_up.quote_plus(query)}&format=json&no_html=1&skip_disambig=1",
+            headers={"User-Agent": "ELVIN/1.0"},
         )
-        with _ur.urlopen(req, timeout=10) as resp:
-            results = __import__("json").loads(resp.read().decode()).get("web", {}).get("results", [])
-        lines = [f"・{r.get('title','')}\n  {r.get('url','')}\n  {r.get('description','')}" for r in results]
-        return jsonify({"results": "\n\n".join(lines) if lines else "結果なし"})
+        with _ur.urlopen(req, timeout=8) as resp:
+            data = _json.loads(resp.read().decode())
+        snippets = []
+        if data.get("Answer"):
+            snippets.append(f"[回答] {data['Answer']}")
+        if data.get("AbstractText"):
+            snippets.append(data["AbstractText"][:400])
+        for topic in data.get("RelatedTopics", [])[:count]:
+            if isinstance(topic, dict) and topic.get("Text"):
+                snippets.append(f"・{topic['Text'][:200]}")
+        results_text = "\n".join(snippets[:count + 1]) if snippets else "結果なし"
+        return jsonify({"results": results_text, "source": "duckduckgo"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
