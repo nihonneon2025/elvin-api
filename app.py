@@ -34,6 +34,8 @@ PORT = int(os.environ.get("PORT", 5050))
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 BRAVE_API_KEY = os.environ.get("BRAVE_API_KEY", "")
+GOOGLE_SEARCH_API_KEY = os.environ.get("GOOGLE_SEARCH_API_KEY", "")
+GOOGLE_SEARCH_CX = os.environ.get("GOOGLE_SEARCH_CX", "")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 
@@ -1495,17 +1497,18 @@ def web_search_proxy():
     import urllib.parse as _up
     import json as _json
 
-    # Brave Search（APIキーあり時）
-    if BRAVE_API_KEY:
+    # Google Custom Search（最優先）
+    if GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_CX:
         try:
-            req = _ur.Request(
-                f"https://api.search.brave.com/res/v1/web/search?q={_up.quote_plus(query)}&count={count}",
-                headers={"Accept": "application/json", "X-Subscription-Token": BRAVE_API_KEY},
+            url = (
+                f"https://www.googleapis.com/customsearch/v1"
+                f"?key={GOOGLE_SEARCH_API_KEY}&cx={GOOGLE_SEARCH_CX}"
+                f"&q={_up.quote_plus(query)}&num={min(count, 10)}&lr=lang_ja"
             )
-            with _ur.urlopen(req, timeout=10) as resp:
-                results = _json.loads(resp.read().decode()).get("web", {}).get("results", [])
-            lines = [f"・{r.get('title','')}\n  {r.get('url','')}\n  {r.get('description','')}" for r in results]
-            return jsonify({"results": "\n\n".join(lines) if lines else "結果なし", "source": "brave"})
+            with _ur.urlopen(_ur.Request(url), timeout=10) as resp:
+                items = _json.loads(resp.read().decode()).get("items", [])
+            lines = [f"・{r.get('title','')}\n  {r.get('link','')}\n  {r.get('snippet','')}" for r in items]
+            return jsonify({"results": "\n\n".join(lines) if lines else "結果なし", "source": "google"})
         except Exception:
             pass  # フォールバックへ
 
