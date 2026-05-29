@@ -1386,14 +1386,22 @@ def chat_list_agents():
 
 @app.route("/api/v1/ai/run", methods=["POST"])
 def ai_run():
-    """ローカルエージェントからプロンプトを受け取りAnthropicSDKで実行して返す。"""
+    """ローカルエージェントからプロンプトを受け取りAnthropicSDKで実行して返す。
+    クライアント固有のAPIキー（DB）を優先し、未設定時はVPS環境変数にフォールバック。
+    """
     token = client_token_from_request()
     client = get_client_by_token(token) if token else None
     if not client:
         return jsonify({"error": "invalid token"}), 401
 
-    if not ANTHROPIC_API_KEY:
-        return jsonify({"error": "ANTHROPIC_API_KEY not configured on VPS"}), 503
+    # クライアント固有キー優先、なければグローバルキー
+    try:
+        api_key = client["anthropic_api_key"] or ANTHROPIC_API_KEY
+    except Exception:
+        api_key = ANTHROPIC_API_KEY
+
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY not configured"}), 503
 
     data = request.get_json(force=True)
     prompt = (data.get("prompt") or "").strip()
@@ -1404,7 +1412,7 @@ def ai_run():
 
     try:
         import anthropic as _ant
-        ant = _ant.Anthropic(api_key=ANTHROPIC_API_KEY)
+        ant = _ant.Anthropic(api_key=api_key)
         kwargs = {
             "model": model,
             "max_tokens": 4096,
