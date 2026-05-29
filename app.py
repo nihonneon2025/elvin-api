@@ -1545,7 +1545,7 @@ def stats_tokens():
     for r in rows:
         t_in = r["tokens_in"] or 0
         t_out = r["tokens_out"] or 0
-        cost_usd = (t_in * _COST_INPUT_PER_1M + t_out * _COST_OUTPUT_PER_1M) / 1_000_000
+        cost_usd = (t_in * _DEFAULT_COST_INPUT_PER_1M + t_out * _DEFAULT_COST_OUTPUT_PER_1M) / 1_000_000
         result.append({
             "hour": r["hour"],
             "tokens_in": t_in,
