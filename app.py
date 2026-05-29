@@ -1529,6 +1529,7 @@ def stats_tokens():
     days = min(int(request.args.get("days", 7)), 30)
     base_q = (
         "SELECT strftime('%Y-%m-%dT%H:00:00', created_at) as hour,"
+        " model,"
         " SUM(tokens_in) as tokens_in, SUM(tokens_out) as tokens_out,"
         " COUNT(*) as task_count"
         " FROM tasks WHERE status = 'completed'"
@@ -1538,20 +1539,36 @@ def stats_tokens():
     if client_id and client_id != "all":
         base_q += " AND client_id = ?"
         params.append(client_id)
-    base_q += " GROUP BY hour ORDER BY hour ASC"
+    base_q += " GROUP BY hour, model ORDER BY hour ASC"
     with get_db() as conn:
         rows = conn.execute(base_q, params).fetchall()
-    result = []
+    # hour × model の行をhour単位に集約（モデル別料金でコスト計算）
+    from collections import defaultdict
+    hourly = defaultdict(lambda: {"tokens_in": 0, "tokens_out": 0, "task_count": 0, "cost_usd": 0.0, "models": {}})
     for r in rows:
+        h = r["hour"]
         t_in = r["tokens_in"] or 0
         t_out = r["tokens_out"] or 0
-        cost_usd = (t_in * _DEFAULT_COST_INPUT_PER_1M + t_out * _DEFAULT_COST_OUTPUT_PER_1M) / 1_000_000
+        model = r["model"] or ""
+        p_in, p_out = _get_model_pricing(model)
+        cost_usd = (t_in * p_in + t_out * p_out) / 1_000_000
+        hourly[h]["tokens_in"] += t_in
+        hourly[h]["tokens_out"] += t_out
+        hourly[h]["task_count"] += r["task_count"]
+        hourly[h]["cost_usd"] += cost_usd
+        short = model.replace("claude-", "").replace("-20251001", "").replace("-20250929", "") or "unknown"
+        hourly[h]["models"][short] = hourly[h]["models"].get(short, 0) + r["task_count"]
+    result = []
+    for hour in sorted(hourly.keys()):
+        d = hourly[hour]
+        dominant = max(d["models"], key=d["models"].get) if d["models"] else "unknown"
         result.append({
-            "hour": r["hour"],
-            "tokens_in": t_in,
-            "tokens_out": t_out,
-            "task_count": r["task_count"],
-            "cost_jpy": int(cost_usd * _USD_TO_JPY),
+            "hour": hour,
+            "tokens_in": d["tokens_in"],
+            "tokens_out": d["tokens_out"],
+            "task_count": d["task_count"],
+            "cost_jpy": int(d["cost_usd"] * _USD_TO_JPY),
+            "model": dominant,
         })
     return jsonify(result)
 
