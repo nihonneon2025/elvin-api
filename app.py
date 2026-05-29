@@ -465,6 +465,19 @@ def delete_agent(agent_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/v1/agents/<agent_id>/purge", methods=["DELETE"])
+@require_daemon
+def purge_agent(agent_id):
+    """エージェントをDBから物理削除（タスク・ツール含む）"""
+    with get_db() as conn:
+        conn.execute("DELETE FROM tasks WHERE agent_id = ?", (agent_id,))
+        conn.execute("DELETE FROM agent_tools WHERE agent_id = ?", (agent_id,))
+        cur = conn.execute("DELETE FROM agents WHERE id = ?", (agent_id,))
+        if cur.rowcount == 0:
+            return jsonify({"error": "agent not found"}), 404
+    return jsonify({"purged": True, "agent_id": agent_id})
+
+
 # ── エージェントツール管理 ────────────────────────────────────────────────
 
 @app.route("/api/v1/agents/<agent_id>/tools", methods=["GET"])
