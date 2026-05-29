@@ -1703,6 +1703,56 @@ def chat_index():
 def chat_static(filename):
     return send_from_directory(CHAT_DIR, filename)
 
+# ── daemon向け 記憶・会話履歴 内部API ────────────────────────────────────
+# client_token で認証（daemonはX-Client-Tokenを保持している）
+
+def _require_own_client(client_id: str):
+    """client_tokenが自分のclient_idと一致するか確認。一致しない場合はレスポンスを返す。"""
+    token = client_token_from_request()
+    client = get_client_by_token(token) if token else None
+    if not client or client["id"] != client_id:
+        return jsonify({"error": "unauthorized"}), 401
+    return None
+
+
+@app.route("/api/v1/internal/memories/<client_id>", methods=["GET"])
+def internal_get_memories(client_id):
+    err = _require_own_client(client_id)
+    if err:
+        return err
+    return jsonify({"memories_text": load_memories(client_id)})
+
+
+@app.route("/api/v1/internal/memories/<client_id>", methods=["POST"])
+def internal_save_memory(client_id):
+    err = _require_own_client(client_id)
+    if err:
+        return err
+    data = request.get_json(force=True)
+    upsert_memory(client_id, data.get("category", "general"), data.get("key", ""), data.get("value", ""))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/v1/internal/conversations/<client_id>/<agent_id>", methods=["GET"])
+def internal_get_conversations(client_id, agent_id):
+    err = _require_own_client(client_id)
+    if err:
+        return err
+    limit = min(int(request.args.get("limit", 20)), 50)
+    history = load_conversation_history(client_id, agent_id, limit=limit)
+    return jsonify(history)
+
+
+@app.route("/api/v1/internal/conversations/<client_id>/<agent_id>", methods=["POST"])
+def internal_save_conversation(client_id, agent_id):
+    err = _require_own_client(client_id)
+    if err:
+        return err
+    data = request.get_json(force=True)
+    save_conversation(client_id, agent_id, data.get("role", "user"), data.get("content", ""))
+    return jsonify({"ok": True})
+
+
 # ── 起動 ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
