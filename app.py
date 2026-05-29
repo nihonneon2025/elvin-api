@@ -36,11 +36,22 @@ ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
 
-# 概算料金レート（定期確認: https://www.anthropic.com/pricing）
-# Claude Sonnet: 入力 $3 / 出力 $15 per 1Mトークン
-_COST_INPUT_PER_1M = 3.0
-_COST_OUTPUT_PER_1M = 15.0
+# モデル別料金レート（公式: https://docs.anthropic.com/ja/docs/about-claude/models）
+# (入力$/1M, 出力$/1M)
+_MODEL_PRICING = {
+    "claude-haiku-4-5-20251001": (1.0, 5.0),
+    "claude-haiku-4-5":          (1.0, 5.0),
+    "claude-sonnet-4-6":         (3.0, 15.0),
+    "claude-opus-4-7":           (5.0, 25.0),
+    "claude-opus-4-6":           (5.0, 25.0),
+}
+_DEFAULT_COST_INPUT_PER_1M  = 3.0   # 不明モデルはSonnet相当で概算
+_DEFAULT_COST_OUTPUT_PER_1M = 15.0
 _USD_TO_JPY = 155
+
+
+def _pricing(model: str) -> tuple:
+    return _MODEL_PRICING.get(model or "", (_DEFAULT_COST_INPUT_PER_1M, _DEFAULT_COST_OUTPUT_PER_1M))
 
 
 # ── DB ────────────────────────────────────────────────────────────────────
@@ -149,8 +160,11 @@ def init_db():
             "ALTER TABLE clients ADD COLUMN status TEXT DEFAULT 'active'",
             "ALTER TABLE clients ADD COLUMN manager_status TEXT DEFAULT 'active'",
             "ALTER TABLE clients ADD COLUMN line_channel_access_token TEXT DEFAULT ''",
+            "ALTER TABLE clients ADD COLUMN anthropic_api_key TEXT DEFAULT ''",
+            "ALTER TABLE clients ADD COLUMN anthropic_model TEXT DEFAULT ''",
             "ALTER TABLE tasks ADD COLUMN tokens_in INTEGER DEFAULT 0",
             "ALTER TABLE tasks ADD COLUMN tokens_out INTEGER DEFAULT 0",
+            "ALTER TABLE tasks ADD COLUMN model TEXT DEFAULT ''",
         ]:
             try:
                 conn.execute(sql)
@@ -292,7 +306,17 @@ def client_usage(client_id):
         ).fetchone()
     total_in = row["total_in"] or 0
     total_out = row["total_out"] or 0
-    cost_usd = (total_in * _COST_INPUT_PER_1M + total_out * _COST_OUTPUT_PER_1M) / 1_000_000
+    with get_db() as conn:
+        model_rows = conn.execute(
+            "SELECT model, SUM(tokens_in) as ti, SUM(tokens_out) as to_"
+            " FROM tasks WHERE client_id = ? AND status='completed' GROUP BY model",
+            (client_id,)
+        ).fetchall()
+    cost_usd = sum(
+        (r["ti"] or 0) * _pricing(r["model"])[0] / 1_000_000 +
+        (r["to_"] or 0) * _pricing(r["model"])[1] / 1_000_000
+        for r in model_rows
+    )
     cost_jpy = int(cost_usd * _USD_TO_JPY)
     return jsonify({
         "client_id": client_id,
@@ -321,12 +345,23 @@ def all_usage():
             " FROM tasks GROUP BY client_id"
         ).fetchall()
     usage_map = {r["client_id"]: dict(r) for r in rows}
+    with get_db() as conn:
+        model_rows = conn.execute(
+            "SELECT client_id, model, SUM(tokens_in) as ti, SUM(tokens_out) as to_"
+            " FROM tasks WHERE status='completed' GROUP BY client_id, model"
+        ).fetchall()
+    cost_map = {}
+    for r in model_rows:
+        c_in, c_out = _pricing(r["model"])
+        cost_map[r["client_id"]] = cost_map.get(r["client_id"], 0) + (
+            (r["ti"] or 0) * c_in + (r["to_"] or 0) * c_out
+        ) / 1_000_000
     result = []
     for c in clients:
         u = usage_map.get(c["id"], {"total_in": 0, "total_out": 0, "total_tasks": 0, "done_tasks": 0})
         t_in = u["total_in"] or 0
         t_out = u["total_out"] or 0
-        cost_usd = (t_in * _COST_INPUT_PER_1M + t_out * _COST_OUTPUT_PER_1M) / 1_000_000
+        cost_usd = cost_map.get(c["id"], 0)
         result.append({
             "client_id": c["id"],
             "client_name": c["name"],
@@ -689,6 +724,7 @@ def complete_task(task_id):
     status = "completed" if success else "failed"
     tokens_in = int(data.get("tokens_in", 0))
     tokens_out = int(data.get("tokens_out", 0))
+    model = (data.get("model") or "").strip()
     task_row = None
 
     with get_db() as conn:
@@ -698,7 +734,7 @@ def complete_task(task_id):
         ).fetchone()
         conn.execute(
             "UPDATE tasks SET status = ?, result = ?, error = ?, completed_at = ?,"
-            " tokens_in = ?, tokens_out = ?"
+            " tokens_in = ?, tokens_out = ?, model = ?"
             " WHERE id = ? AND client_id = ?",
             (
                 status,
@@ -707,6 +743,7 @@ def complete_task(task_id):
                 now_iso(),
                 tokens_in,
                 tokens_out,
+                model,
                 task_id,
                 client["id"],
             ),
