@@ -204,6 +204,21 @@ def init_db():
                 FOREIGN KEY (client_id) REFERENCES clients(id)
             );
         """)
+            CREATE TABLE IF NOT EXISTS deadline_alerts (
+                id                TEXT PRIMARY KEY,
+                client_id         TEXT NOT NULL,
+                project_name      TEXT NOT NULL,
+                category          TEXT NOT NULL,
+                deadline          TEXT NOT NULL,
+                alert_days_before INTEGER DEFAULT 7,
+                lineworks_room    TEXT DEFAULT '',
+                status            TEXT DEFAULT 'pending',
+                notified_at       TEXT,
+                memo              TEXT DEFAULT '',
+                created_at        TEXT,
+                FOREIGN KEY (client_id) REFERENCES clients(id)
+            );
+        """)
         # 既存DBへのカラム追加（冪等）
         for sql in [
             "ALTER TABLE clients ADD COLUMN status TEXT DEFAULT 'active'",
@@ -2358,6 +2373,80 @@ def delete_construction_alert(alert_id):
     return jsonify({"ok": True})
 
 
+# ── 期限アラート CRUD ────────────────────────────────────────────────────
+
+@app.route("/api/v1/client/deadline-alerts", methods=["GET"])
+def get_deadline_alerts():
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM deadline_alerts WHERE client_id = ? ORDER BY deadline ASC",
+            (client["id"],)
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/client/deadline-alerts", methods=["POST"])
+def create_deadline_alert():
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True)
+    project_name = data.get("project_name", "").strip()
+    category = data.get("category", "").strip()
+    deadline = data.get("deadline", "").strip()
+    lineworks_room = data.get("lineworks_room", "").strip()
+    if not project_name or not category or not deadline or not lineworks_room:
+        return jsonify({"error": "project_name, category, deadline, lineworks_room are required"}), 400
+    alert_id = str(uuid.uuid4())[:12]
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO deadline_alerts"
+            " (id, client_id, project_name, category, deadline, alert_days_before,"
+            "  lineworks_room, status, memo, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+            (alert_id, client["id"], project_name, category, deadline,
+             int(data.get("alert_days_before", 7)), lineworks_room,
+             data.get("memo", ""), now_iso())
+        )
+    return jsonify({"id": alert_id, "project_name": project_name}), 201
+
+
+@app.route("/api/v1/client/deadline-alerts/<alert_id>", methods=["PATCH"])
+def update_deadline_alert(alert_id):
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True)
+    allowed = {"project_name", "category", "deadline", "alert_days_before",
+               "lineworks_room", "status", "memo"}
+    fields = {k: v for k, v in data.items() if k in allowed}
+    if not fields:
+        return jsonify({"error": "no updatable fields"}), 400
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    with get_db() as conn:
+        conn.execute(
+            f"UPDATE deadline_alerts SET {set_clause} WHERE id = ? AND client_id = ?",
+            (*fields.values(), alert_id, client["id"])
+        )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/v1/client/deadline-alerts/<alert_id>", methods=["DELETE"])
+def delete_deadline_alert(alert_id):
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM deadline_alerts WHERE id = ? AND client_id = ?",
+            (alert_id, client["id"])
+        )
+    return jsonify({"ok": True})
+
+
 # ── 発注アラートスケジューラ ────────────────────────────────────────────
 
 def _check_construction_alerts():
@@ -2428,6 +2517,71 @@ def _check_construction_alerts():
             print(f"[SCHEDULER] アラート処理エラー id={alert['id']}: {e}")
 
 
+def _check_deadline_alerts():
+    """期限が近づいた deadline_alerts をチェックして lineworks_send タスクを作成する"""
+    from datetime import date, timedelta
+    today = date.today()
+    today_str = today.isoformat()
+
+    with get_db() as conn:
+        alerts = conn.execute(
+            "SELECT da.*, c.name as client_name FROM deadline_alerts da"
+            " JOIN clients c ON da.client_id = c.id"
+            " WHERE da.status = 'pending'"
+        ).fetchall()
+
+    for alert in alerts:
+        try:
+            deadline = date.fromisoformat(alert["deadline"])
+            days_before = alert["alert_days_before"] or 7
+            notify_from = deadline - timedelta(days=days_before)
+
+            if today < notify_from:
+                continue
+
+            last_notified = alert["notified_at"] or ""
+            if last_notified and last_notified[:10] == today_str:
+                continue
+
+            days_left = (deadline - today).days
+            if days_left > 0:
+                urgency = f"📅 期限まであと {days_left} 日です"
+            elif days_left == 0:
+                urgency = "⚠️ 本日が期限です"
+            else:
+                urgency = f"🚨 期限を {-days_left} 日超過しています"
+
+            message = (
+                f"【期限アラート】{urgency}\n"
+                f"現場: {alert['project_name']}\n"
+                f"種別: {alert['category']}\n"
+                f"期限: {alert['deadline']}\n"
+                + (f"メモ: {alert['memo']}\n" if alert.get("memo") else "")
+                + f"※ 完了したらELVIN MANAGERで「完了」にしてください"
+            )
+
+            task_id = str(uuid.uuid4())
+            payload = json.dumps({
+                "message": message,
+                "room_name": alert["lineworks_room"],
+            }, ensure_ascii=False)
+
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT INTO tasks (id, client_id, type, payload, status, created_at)"
+                    " VALUES (?, ?, 'lineworks_send', ?, 'pending', ?)",
+                    (task_id, alert["client_id"], payload, now_iso())
+                )
+                conn.execute(
+                    "UPDATE deadline_alerts SET notified_at = ? WHERE id = ?",
+                    (now_iso(), alert["id"])
+                )
+            print(f"[SCHEDULER] 期限アラート通知タスク作成: {alert['project_name']} / {alert['category']}")
+
+        except Exception as e:
+            print(f"[SCHEDULER] 期限アラート処理エラー id={alert['id']}: {e}")
+
+
 def _alert_scheduler_loop():
     import time as _time
     from datetime import datetime as _dt
@@ -2437,6 +2591,7 @@ def _alert_scheduler_loop():
             now_h = _dt.now().hour
             if 7 <= now_h <= 21:  # 業務時間帯のみ実行
                 _check_construction_alerts()
+                _check_deadline_alerts()
         except Exception as e:
             print(f"[SCHEDULER] ループエラー: {e}")
         _time.sleep(3600)  # 1時間ごと
