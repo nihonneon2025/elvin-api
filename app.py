@@ -1202,11 +1202,39 @@ def line_webhook_client(client_token):
         if event.get("type") != "message":
             continue
         msg = event.get("message", {})
-        if msg.get("type") != "text":
-            continue
-        text = msg.get("text", "").strip()
+        msg_type = msg.get("type", "")
         reply_token = event.get("replyToken", "")
         source = event.get("source", {})
+
+        # 画像・ファイル受信: LINEのContent APIからダウンロードしてURLをテキストに変換
+        if msg_type in ("image", "file", "video", "audio"):
+            message_id = msg.get("id", "")
+            if message_id and LINE_CHANNEL_ACCESS_TOKEN:
+                try:
+                    upload_dir = os.path.join(os.path.dirname(__file__), "uploads", client["id"])
+                    os.makedirs(upload_dir, exist_ok=True)
+                    ext = {"image": "jpg", "video": "mp4", "audio": "m4a", "file": "bin"}.get(msg_type, "bin")
+                    filename = msg.get("fileName") or f"{message_id}.{ext}"
+                    filepath = os.path.join(upload_dir, filename)
+                    dl_url = f"https://api-data.line.me/v2/bot/message/{message_id}/content"
+                    dl_req = _urlreq.Request(dl_url, headers={"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"})
+                    with _urlreq.urlopen(dl_req, timeout=15) as resp:
+                        with open(filepath, "wb") as f:
+                            f.write(resp.read())
+                    file_url = f"/api/v1/uploads/{client['id']}/{filename}"
+                    type_label = {"image": "画像", "video": "動画", "audio": "音声", "file": "ファイル"}.get(msg_type, "ファイル")
+                    text = f"[{type_label}添付: {file_url}] {type_label}が送られました。内容を確認して返答してください。"
+                except Exception as e:
+                    print(f"[WEBHOOK] ファイルダウンロードエラー: {e}")
+                    continue
+            else:
+                continue
+        elif msg_type == "text":
+            text = msg.get("text", "").strip()
+        else:
+            continue
+
+        source = source  # already set above
         group_id = source.get("groupId", "")
         line_user_id = source.get("userId", "")
 
@@ -2181,6 +2209,12 @@ def chat_index():
 @app.route("/chat/<path:filename>")
 def chat_static(filename):
     return send_from_directory(CHAT_DIR, filename)
+
+
+@app.route("/api/v1/uploads/<client_id>/<path:filename>")
+def serve_upload(client_id, filename):
+    upload_dir = os.path.join(os.path.dirname(__file__), "uploads", client_id)
+    return send_from_directory(upload_dir, filename)
 
 # ── daemon向け 記憶・会話履歴 内部API ────────────────────────────────────
 # client_token で認証（daemonはX-Client-Tokenを保持している）
@@ -3349,9 +3383,39 @@ def voice_cleanup():
         return jsonify({"text": raw, "error": str(e)})
 
 
+def _check_lineworks_health():
+    """LINE WORKS送信の失敗件数を監視。1時間以内に3件以上失敗していたらADMINログに警告を記録する。"""
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    _JST = _tz(_td(hours=9))
+    one_hour_ago = (_dt.now(_JST) - _td(hours=1)).isoformat()
+    try:
+        with get_db() as conn:
+            failed = conn.execute(
+                "SELECT COUNT(*) as cnt FROM tasks"
+                " WHERE type='lineworks_send' AND status='failed'"
+                " AND created_at >= ?",
+                (one_hour_ago,)
+            ).fetchone()
+            cnt = failed["cnt"] if failed else 0
+            if cnt >= 3:
+                msg = f"[LINE WORKS健康監視] 過去1時間でlineworks_send失敗が{cnt}件。Cookieが切れている可能性があります。client-ago/lineworks_send.pyを手動確認してください。"
+                print(f"[SCHEDULER] ⚠ {msg}")
+                conn.execute(
+                    "INSERT INTO logs (id, client_id, level, message, created_at)"
+                    " VALUES (?, NULL, 'warn', ?, ?)",
+                    (str(uuid.uuid4()), msg, now_iso())
+                )
+    except Exception as e:
+        print(f"[SCHEDULER] LINE WORKS健康チェックエラー: {e}")
+
+
+_lw_health_last_check = 0
+
+
 def _alert_scheduler_loop():
     import time as _time
     from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    global _lw_health_last_check
     _JST = _tz(_td(hours=9))
     _time.sleep(10)  # 起動直後は待機
     while True:
@@ -3362,6 +3426,11 @@ def _alert_scheduler_loop():
                 _check_deadline_alerts()
                 _check_checklist_alerts()
                 _check_recurring_tasks()
+            # LINE WORKS健康監視: 1時間に1回
+            now_ts = _time.time()
+            if now_ts - _lw_health_last_check >= 3600:
+                _check_lineworks_health()
+                _lw_health_last_check = now_ts
         except Exception as e:
             print(f"[SCHEDULER] ループエラー: {e}")
         _time.sleep(300)  # 5分ごと

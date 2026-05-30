@@ -1203,7 +1203,18 @@ async function openEditModal(agentId, agentName) {
   document.getElementById('modal-footer').innerHTML = '';
   document.getElementById('modal-overlay').style.display = 'flex';
   try {
-    const ag = await api('GET', `/api/v1/agents/${agentId}`);
+    const [ag, tools] = await Promise.all([
+      api('GET', `/api/v1/agents/${agentId}`),
+      api('GET', `/api/v1/agents/${agentId}/tools`).catch(() => [])
+    ]);
+    const toolsHtml = (tools||[]).map(t => `
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f8f9fc;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px">
+        <span style="flex:1;font-size:13px;font-family:monospace">${esc(t.tool_name)}</span>
+        <span style="font-size:11px;color:${t.enabled?'#10b981':'#94a3b8'}">${t.enabled?'有効':'無効'}</span>
+        <button onclick="deleteAgentTool('${esc(agentId)}','${esc(t.tool_name)}')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:13px;padding:2px 6px" title="削除">✕</button>
+      </div>`).join('') || '<div style="font-size:12px;color:#94a3b8;padding:4px 0">ツールなし</div>';
+    const knownTools = ['ELVIN_task','web_search','file_operation','lineworks_send','google_drive','google_sheets','pdf_export','elvin_search'];
+    const toolOptions = knownTools.map(n => `<option value="${n}">${n}</option>`).join('');
     document.getElementById('modal-body').innerHTML = `
       <div class="form-group"><label>エージェントID</label><input type="text" value="${esc(agentId)}" readonly style="color:#475569"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
@@ -1211,7 +1222,15 @@ async function openEditModal(agentId, agentName) {
         <div class="form-group" style="margin-bottom:0"><label>役割</label><input type="text" id="modal-role" value="${esc(ag.role||'')}"></div>
       </div>
       <div class="form-group"><label>LINE グループID</label><input type="text" id="modal-linegroupid" value="${esc(ag.line_group_id||'')}" placeholder="Cxxxxxxxx..."></div>
-      <div class="form-group"><label>system_prompt</label><textarea id="modal-prompt" rows="14">${esc(ag.system_prompt||'')}</textarea></div>`;
+      <div class="form-group"><label>system_prompt</label><textarea id="modal-prompt" rows="10">${esc(ag.system_prompt||'')}</textarea></div>
+      <div class="form-group">
+        <label>ツール設定</label>
+        <div id="modal-tools-list">${toolsHtml}</div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <select id="modal-tool-select" style="flex:1;padding:8px 10px;border:1px solid #dde1e9;border-radius:6px;font-size:13px;background:#fff">${toolOptions}</select>
+          <button class="btn btn-ghost" style="padding:8px 14px;font-size:13px" onclick="addAgentTool('${esc(agentId)}')">＋ 追加</button>
+        </div>
+      </div>`;
     document.getElementById('modal-footer').innerHTML = `
       <button class="btn btn-ghost" onclick="closeModal()">キャンセル</button>
       <button class="btn btn-primary" onclick="saveAgent()">保存</button>`;
@@ -1228,6 +1247,27 @@ async function saveAgent() {
     await api('PATCH', `/api/v1/agents/${EDIT_AGENT_ID}`, { name, role, line_group_id, system_prompt });
     toast('保存しました'); closeModal(); loadClients();
   } catch(e) { toast('保存エラー: ' + e.message, true); }
+}
+
+async function addAgentTool(agentId) {
+  const sel = document.getElementById('modal-tool-select');
+  if (!sel) return;
+  const toolName = sel.value.trim();
+  if (!toolName) { toast('ツールを選択してください', true); return; }
+  try {
+    await api('POST', `/api/v1/agents/${agentId}/tools`, { tool_name: toolName, config: {} });
+    toast(`${toolName} を追加しました`);
+    openAgentModal(agentId, document.getElementById('modal-title').textContent.replace(' — 編集',''));
+  } catch(e) { toast('追加エラー: ' + e.message, true); }
+}
+
+async function deleteAgentTool(agentId, toolName) {
+  if (!confirm(`「${toolName}」を削除しますか？`)) return;
+  try {
+    await api('DELETE', `/api/v1/agents/${agentId}/tools/${toolName}`);
+    toast(`${toolName} を削除しました`);
+    openAgentModal(agentId, document.getElementById('modal-title').textContent.replace(' — 編集',''));
+  } catch(e) { toast('削除エラー: ' + e.message, true); }
 }
 
 // ── Setup Wizard ─────────────────────────────────
