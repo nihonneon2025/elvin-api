@@ -161,12 +161,13 @@ def init_db():
                 UNIQUE(client_id, category, key)
             );
             CREATE TABLE IF NOT EXISTS conversations (
-                id         TEXT PRIMARY KEY,
-                client_id  TEXT NOT NULL,
-                agent_id   TEXT,
-                role       TEXT NOT NULL,
-                content    TEXT NOT NULL,
-                created_at TEXT
+                id           TEXT PRIMARY KEY,
+                client_id    TEXT NOT NULL,
+                agent_id     TEXT,
+                role         TEXT NOT NULL,
+                content      TEXT NOT NULL,
+                requester_id TEXT,
+                created_at   TEXT
             );
             CREATE TABLE IF NOT EXISTS staff (
                 id            TEXT PRIMARY KEY,
@@ -187,6 +188,7 @@ def init_db():
             "ALTER TABLE tasks ADD COLUMN tokens_in INTEGER DEFAULT 0",
             "ALTER TABLE tasks ADD COLUMN tokens_out INTEGER DEFAULT 0",
             "ALTER TABLE tasks ADD COLUMN model TEXT DEFAULT ''",
+            "ALTER TABLE conversations ADD COLUMN requester_id TEXT",
         ]:
             try:
                 conn.execute(sql)
@@ -1463,10 +1465,18 @@ def load_memories(client_id: str) -> str:
     return "\n".join(lines)
 
 
-def load_conversation_history(client_id: str, agent_id: str | None, limit: int = 20) -> list:
-    """直近の会話履歴をAnthropicのmessages形式で返す"""
+def load_conversation_history(client_id: str, agent_id: str | None, limit: int = 20,
+                              requester_id: str = None) -> list:
+    """直近の会話履歴をAnthropicのmessages形式で返す。requester_id指定時はその送信者のみ取得"""
     with get_db() as conn:
-        if agent_id:
+        if agent_id and requester_id:
+            rows = conn.execute(
+                "SELECT role, content FROM conversations"
+                " WHERE client_id = ? AND agent_id = ? AND requester_id = ?"
+                " ORDER BY created_at DESC LIMIT ?",
+                (client_id, agent_id, requester_id, limit),
+            ).fetchall()
+        elif agent_id:
             rows = conn.execute(
                 "SELECT role, content FROM conversations"
                 " WHERE client_id = ? AND agent_id = ?"
@@ -1483,12 +1493,13 @@ def load_conversation_history(client_id: str, agent_id: str | None, limit: int =
     return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
 
 
-def save_conversation(client_id: str, agent_id: str | None, role: str, content: str):
+def save_conversation(client_id: str, agent_id: str | None, role: str, content: str,
+                      requester_id: str = None):
     with get_db() as conn:
         conn.execute(
-            "INSERT INTO conversations (id, client_id, agent_id, role, content, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (str(uuid.uuid4()), client_id, agent_id, role, content, now_iso()),
+            "INSERT INTO conversations (id, client_id, agent_id, role, content, requester_id, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), client_id, agent_id, role, content, requester_id, now_iso()),
         )
 
 
@@ -2107,7 +2118,8 @@ def internal_get_conversations(client_id, agent_id):
     if err:
         return err
     limit = min(int(request.args.get("limit", 20)), 50)
-    history = load_conversation_history(client_id, agent_id, limit=limit)
+    requester_id = request.args.get("requester_id") or None
+    history = load_conversation_history(client_id, agent_id, limit=limit, requester_id=requester_id)
     return jsonify(history)
 
 
@@ -2117,7 +2129,8 @@ def internal_save_conversation(client_id, agent_id):
     if err:
         return err
     data = request.get_json(force=True)
-    save_conversation(client_id, agent_id, data.get("role", "user"), data.get("content", ""))
+    save_conversation(client_id, agent_id, data.get("role", "user"), data.get("content", ""),
+                      requester_id=data.get("requester_id") or None)
     return jsonify({"ok": True})
 
 
