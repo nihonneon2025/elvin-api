@@ -2641,8 +2641,9 @@ def apply_project_routine():
 
 
 def _check_construction_alerts():
-    """発注期限が到来した着工アラートをチェックして lineworks_send タスクを作成する"""
+    """発注期限が到来した着工アラートをルーム単位で束ねて1通送信する"""
     from datetime import date, timedelta
+    from collections import defaultdict
     today = date.today()
     today_str = today.isoformat()
 
@@ -2653,64 +2654,68 @@ def _check_construction_alerts():
             " WHERE ca.status = 'pending'"
         ).fetchall()
 
+    # ルーム×クライアントごとに集約
+    groups = defaultdict(list)  # (client_id, room) -> [(alert, order_date, days_late)]
     for alert in alerts:
         try:
             cd = date.fromisoformat(alert["construction_date"])
             ltd = alert["lead_time_days"] or 14
             order_date = cd - timedelta(days=ltd)
-
             if today < order_date:
                 continue
-
             last_notified = alert["notified_at"] or ""
             if last_notified and last_notified[:10] == today_str:
                 continue
-
-            item_name = alert["order_item_name"] or "指定品目"
-            room = alert["lineworks_room"] or ""
             days_late = (today - order_date).days
+            room = alert["lineworks_room"] or ""
+            groups[(alert["client_id"], room)].append((alert, order_date, days_late))
+        except Exception as e:
+            print(f"[SCHEDULER] 発注アラート処理エラー id={alert['id']}: {e}")
 
-            if days_late == 0:
-                urgency = "⚠️ 本日が発注期限です"
-            elif days_late > 0:
-                urgency = f"🚨 発注期限を {days_late} 日超過しています"
-            else:
-                urgency = f"📅 発注期限まであと {-days_late} 日です"
-
-            message = (
-                f"【発注アラート】{urgency}\n"
-                f"現場: {alert['project_name']}\n"
-                f"品目: {item_name}（リードタイム: {ltd}日）\n"
-                f"着工予定: {alert['construction_date']}\n"
-                f"発注期限: {order_date.isoformat()}\n"
-                f"※ 発注が完了したらELVIN ADMINで「発注済」に更新してください"
-            )
+    for (client_id, room), items in groups.items():
+        try:
+            lines = [f"【発注アラート】{len(items)}件\n"]
+            alert_ids = []
+            for alert, order_date, days_late in items:
+                item_name = alert["order_item_name"] or "指定品目"
+                ltd = alert["lead_time_days"] or 14
+                if days_late == 0:
+                    mark = "⚠️ 本日期限"
+                elif days_late > 0:
+                    mark = f"🚨 {days_late}日超過"
+                else:
+                    mark = f"📅 あと{-days_late}日"
+                lines.append(
+                    f"■ {alert['project_name']}\n"
+                    f"  {mark} | {item_name}（LT:{ltd}日）\n"
+                    f"  着工:{alert['construction_date']} 期限:{order_date.isoformat()}"
+                )
+                alert_ids.append(alert["id"])
+            lines.append("\n※ 発注完了後はELVIN MANAGERで「発注済」に更新してください")
+            message = "\n".join(lines)
 
             task_id = str(uuid.uuid4())
-            payload = json.dumps({
-                "message": message,
-                "room_name": room,
-            }, ensure_ascii=False)
-
+            payload = json.dumps({"message": message, "room_name": room}, ensure_ascii=False)
             with get_db() as conn:
                 conn.execute(
                     "INSERT INTO tasks (id, client_id, type, payload, status, created_at)"
                     " VALUES (?, ?, 'lineworks_send', ?, 'pending', ?)",
-                    (task_id, alert["client_id"], payload, now_iso())
+                    (task_id, client_id, payload, now_iso())
                 )
-                conn.execute(
-                    "UPDATE construction_alerts SET notified_at = ? WHERE id = ?",
-                    (now_iso(), alert["id"])
-                )
-            print(f"[SCHEDULER] アラート通知タスク作成: {alert['project_name']} / {item_name}")
-
+                for aid in alert_ids:
+                    conn.execute(
+                        "UPDATE construction_alerts SET notified_at = ? WHERE id = ?",
+                        (now_iso(), aid)
+                    )
+            print(f"[SCHEDULER] 発注アラート通知 {len(items)}件 → {room}")
         except Exception as e:
-            print(f"[SCHEDULER] アラート処理エラー id={alert['id']}: {e}")
+            print(f"[SCHEDULER] 発注アラートまとめエラー client={client_id}: {e}")
 
 
 def _check_deadline_alerts():
-    """期限が近づいた deadline_alerts をチェックして lineworks_send タスクを作成する"""
+    """期限アラートをルーム単位で束ねて1通送信する"""
     from datetime import date, timedelta
+    from collections import defaultdict
     today = date.today()
     today_str = today.isoformat()
 
@@ -2721,61 +2726,70 @@ def _check_deadline_alerts():
             " WHERE da.status = 'pending'"
         ).fetchall()
 
+    # ルーム×クライアントごとに集約
+    groups = defaultdict(list)  # (client_id, room) -> [(alert, days_left)]
     for alert in alerts:
         try:
             deadline = date.fromisoformat(alert["deadline"])
             days_before = alert["alert_days_before"] or 7
             notify_from = deadline - timedelta(days=days_before)
-
             if today < notify_from:
                 continue
-
             last_notified = alert["notified_at"] or ""
             if last_notified and last_notified[:10] == today_str:
                 continue
-
             days_left = (deadline - today).days
-            if days_left > 0:
-                urgency = f"📅 期限まであと {days_left} 日です"
-            elif days_left == 0:
-                urgency = "⚠️ 本日が期限です"
-            else:
-                urgency = f"🚨 期限を {-days_left} 日超過しています"
+            room = alert["lineworks_room"] or ""
+            groups[(alert["client_id"], room)].append((alert, days_left))
+        except Exception as e:
+            print(f"[SCHEDULER] 期限アラート処理エラー id={alert['id']}: {e}")
 
-            message = (
-                f"【期限アラート】{urgency}\n"
-                f"現場: {alert['project_name']}\n"
-                f"種別: {alert['category']}\n"
-                f"期限: {alert['deadline']}\n"
-                + (f"メモ: {alert['memo']}\n" if alert["memo"] else "")
-                + f"※ 完了したらELVIN MANAGERで「完了」にしてください"
-            )
+    for (client_id, room), items in groups.items():
+        try:
+            # 現場ごとにまとめる
+            by_project = defaultdict(list)
+            for alert, days_left in items:
+                by_project[alert["project_name"]].append((alert, days_left))
+
+            lines = [f"【期限アラート】{len(items)}件\n"]
+            alert_ids = []
+            for project_name, proj_items in by_project.items():
+                lines.append(f"■ {project_name}")
+                for alert, days_left in sorted(proj_items, key=lambda x: x[0]["deadline"]):
+                    if days_left > 0:
+                        mark = f"📅 あと{days_left}日"
+                    elif days_left == 0:
+                        mark = "⚠️ 本日期限"
+                    else:
+                        mark = f"🚨 {-days_left}日超過"
+                    memo_str = f" ({alert['memo']})" if alert["memo"] else ""
+                    lines.append(f"  {mark} | {alert['category']}{memo_str} | {alert['deadline']}")
+                    alert_ids.append(alert["id"])
+            lines.append("\n※ 完了後はELVIN MANAGERで「完了」にしてください")
+            message = "\n".join(lines)
 
             task_id = str(uuid.uuid4())
-            payload = json.dumps({
-                "message": message,
-                "room_name": alert["lineworks_room"],
-            }, ensure_ascii=False)
-
+            payload = json.dumps({"message": message, "room_name": room}, ensure_ascii=False)
             with get_db() as conn:
                 conn.execute(
                     "INSERT INTO tasks (id, client_id, type, payload, status, created_at)"
                     " VALUES (?, ?, 'lineworks_send', ?, 'pending', ?)",
-                    (task_id, alert["client_id"], payload, now_iso())
+                    (task_id, client_id, payload, now_iso())
                 )
-                conn.execute(
-                    "UPDATE deadline_alerts SET notified_at = ? WHERE id = ?",
-                    (now_iso(), alert["id"])
-                )
-            print(f"[SCHEDULER] 期限アラート通知タスク作成: {alert['project_name']} / {alert['category']}")
-
+                for aid in alert_ids:
+                    conn.execute(
+                        "UPDATE deadline_alerts SET notified_at = ? WHERE id = ?",
+                        (now_iso(), aid)
+                    )
+            print(f"[SCHEDULER] 期限アラート通知 {len(items)}件 → {room}")
         except Exception as e:
-            print(f"[SCHEDULER] 期限アラート処理エラー id={alert['id']}: {e}")
+            print(f"[SCHEDULER] 期限アラートまとめエラー client={client_id}: {e}")
 
 
 def _check_checklist_alerts():
-    """着工7日前チェックリストをチェックして未確認項目をLINE通知する"""
+    """着工7日前チェックリストをルーム単位で束ねて1通送信する"""
     from datetime import date, timedelta
+    from collections import defaultdict
     today = date.today()
     today_str = today.isoformat()
     notify_threshold = today + timedelta(days=7)
@@ -2787,17 +2801,15 @@ def _check_checklist_alerts():
             " WHERE ca.status = 'pending'"
         ).fetchall()
 
+    groups = defaultdict(list)  # (client_id, room) -> [(alert, days_until, unchecked)]
     for alert in alerts:
         try:
             cd = date.fromisoformat(alert["construction_date"])
-
             if cd > notify_threshold:
                 continue
-
             last_notified = alert["notified_at"] or ""
             if last_notified and last_notified[:10] == today_str:
                 continue
-
             unchecked = []
             if not alert["check_materials"]:
                 unchecked.append("部材確定")
@@ -2805,7 +2817,6 @@ def _check_checklist_alerts():
                 unchecked.append("下請確定")
             if not alert["check_instruction"]:
                 unchecked.append("施工指示書配布")
-
             if not unchecked:
                 with get_db() as conn:
                     conn.execute(
@@ -2813,43 +2824,47 @@ def _check_checklist_alerts():
                         (now_iso(), alert["id"])
                     )
                 continue
-
             days_until = (cd - today).days
-            if days_until > 0:
-                timing = f"着工まであと {days_until} 日"
-            elif days_until == 0:
-                timing = "本日着工"
-            else:
-                timing = f"着工日を {-days_until} 日超過"
+            room = alert["lineworks_room"] or ""
+            groups[(alert["client_id"], room)].append((alert, days_until, unchecked))
+        except Exception as e:
+            print(f"[SCHEDULER] チェックリスト処理エラー id={alert['id']}: {e}")
 
-            message = (
-                f"【着工チェックリスト】⚠️ 未確認項目があります\n"
-                f"現場: {alert['construction_name']}\n"
-                f"着工予定: {alert['construction_date']}（{timing}）\n"
-                f"未確認: {' / '.join(unchecked)}\n"
-                f"※ ELVIN MANAGERでチェックを入れてください"
-            )
+    for (client_id, room), items in groups.items():
+        try:
+            lines = [f"【着工チェックリスト】未確認 {len(items)}件\n"]
+            alert_ids = []
+            for alert, days_until, unchecked in items:
+                if days_until > 0:
+                    timing = f"あと{days_until}日"
+                elif days_until == 0:
+                    timing = "本日着工"
+                else:
+                    timing = f"着工超過{-days_until}日"
+                lines.append(
+                    f"■ {alert['construction_name']}（{timing} / {alert['construction_date']}）\n"
+                    f"  未確認: {' / '.join(unchecked)}"
+                )
+                alert_ids.append(alert["id"])
+            lines.append("\n※ ELVIN MANAGERでチェックを入れてください")
+            message = "\n".join(lines)
 
             task_id = str(uuid.uuid4())
-            payload = json.dumps({
-                "message": message,
-                "room_name": alert["lineworks_room"],
-            }, ensure_ascii=False)
-
+            payload = json.dumps({"message": message, "room_name": room}, ensure_ascii=False)
             with get_db() as conn:
                 conn.execute(
                     "INSERT INTO tasks (id, client_id, type, payload, status, created_at)"
                     " VALUES (?, ?, 'lineworks_send', ?, 'pending', ?)",
-                    (task_id, alert["client_id"], payload, now_iso())
+                    (task_id, client_id, payload, now_iso())
                 )
-                conn.execute(
-                    "UPDATE checklist_alerts SET notified_at = ? WHERE id = ?",
-                    (now_iso(), alert["id"])
-                )
-            print(f"[SCHEDULER] チェックリスト通知タスク作成: {alert['construction_name']} / 未確認: {', '.join(unchecked)}")
-
+                for aid in alert_ids:
+                    conn.execute(
+                        "UPDATE checklist_alerts SET notified_at = ? WHERE id = ?",
+                        (now_iso(), aid)
+                    )
+            print(f"[SCHEDULER] チェックリスト通知 {len(items)}件 → {room}")
         except Exception as e:
-            print(f"[SCHEDULER] チェックリスト処理エラー id={alert['id']}: {e}")
+            print(f"[SCHEDULER] チェックリストまとめエラー client={client_id}: {e}")
 
 
 def _alert_scheduler_loop():
