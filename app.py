@@ -1829,6 +1829,37 @@ def delete_staff(client_id, staff_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/v1/staff", methods=["GET"])
+def list_staff_by_token():
+    """登録済みスタッフ一覧（ELVIN MANAGER用・X-Client-Token認証）"""
+    token = client_token_from_request()
+    client = get_client_by_token(token) if token else None
+    if not client:
+        return jsonify({"error": "invalid token"}), 401
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, line_user_id, name, created_at FROM staff"
+            " WHERE client_id = ? ORDER BY created_at ASC",
+            (client["id"],),
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/staff/<staff_id>", methods=["DELETE"])
+def delete_staff_by_token(staff_id):
+    """スタッフ削除（ELVIN MANAGER用・X-Client-Token認証）"""
+    token = client_token_from_request()
+    client = get_client_by_token(token) if token else None
+    if not client:
+        return jsonify({"error": "invalid token"}), 401
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM staff WHERE client_id = ? AND id = ?",
+            (client["id"], staff_id),
+        )
+    return jsonify({"ok": True})
+
+
 @app.route("/api/v1/clients/<client_id>/conversations", methods=["GET"])
 @require_daemon
 def list_conversations(client_id):
