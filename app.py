@@ -3303,7 +3303,7 @@ def _alert_scheduler_loop():
                 _check_recurring_tasks()
         except Exception as e:
             print(f"[SCHEDULER] ループエラー: {e}")
-        _time.sleep(3600)  # 1時間ごと
+        _time.sleep(300)  # 5分ごと
 
 
 # ── 起動 ─────────────────────────────────────────────────────────────────
