@@ -221,6 +221,118 @@ def line_reply(reply_token: str, text: str, access_token: str = ""):
         print(f"[LINE] reply error: {e}")
 
 
+def _web_push(push_url: str, push_token: str, title: str, body: str, path: str = "/"):
+    """Web Push通知をsubscribe.phpへ送信（daemon不在時のバックアップ通知）"""
+    if not push_url or not push_token:
+        return
+    payload = json.dumps({
+        "action": "send_all",
+        "title": title,
+        "body": body[:200],
+        "url": path,
+        "badge_count": 1,
+    }).encode()
+    req = _urlreq.Request(
+        push_url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "X-AGO-Token": push_token,
+        },
+        method="POST",
+    )
+    try:
+        _urlreq.urlopen(req, timeout=15)
+    except Exception as e:
+        print(f"[WEB_PUSH] error: {e}")
+
+
+def _vps_elvin_task_fallback(task_id: str, payload: dict):
+    """ELVIN_task投入後30秒経ってもdaemonが拾わない場合、VPS側でAI処理してWeb Pushで通知する。
+    ファイル操作・Playwright等のデスクトップ操作は不可。テキスト回答のみ提供。
+    """
+    time.sleep(30)
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT status, agent_id, client_id FROM tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+    if not row or row["status"] != "pending":
+        return  # daemon処理済み or 処理中
+
+    client_id = row["client_id"] or ""
+    agent_id = row["agent_id"] or ""
+    prompt = payload.get("prompt", "")
+    requester_name = payload.get("requester_name", "スタッフ")
+    push_url = payload.get("web_push_url", "")
+    push_token = payload.get("web_push_token", "")
+
+    # エージェントのsystem_promptをDBから取得
+    system_prompt = ""
+    if agent_id:
+        with get_db() as conn:
+            ag = conn.execute(
+                "SELECT system_prompt FROM agents WHERE id = ?", (agent_id,)
+            ).fetchone()
+        if ag:
+            system_prompt = ag["system_prompt"] or ""
+
+    # VPS側でAnthropicを呼んでテキスト回答を生成
+    output = ""
+    tokens_in = tokens_out = 0
+    try:
+        if ANTHROPIC_API_KEY and prompt:
+            import anthropic as _ant
+            with get_db() as conn:
+                client_row = conn.execute(
+                    "SELECT anthropic_api_key, anthropic_model FROM clients WHERE id = ?",
+                    (client_id,)
+                ).fetchone()
+            api_key = (client_row["anthropic_api_key"] if client_row else "") or ANTHROPIC_API_KEY
+            model = (client_row["anthropic_model"] if client_row else "") or ANTHROPIC_MODEL
+
+            ant = _ant.Anthropic(api_key=api_key)
+            vps_note = (
+                "【VPSバックアップモード: デスクトップAIが応答不可のため代替処理中。"
+                "ファイル操作・PowerShell実行・LINE WORKSへの送付はできません。"
+                "テキスト回答のみ提供してください。】"
+            )
+            full_system = f"{system_prompt}\n\n{vps_note}" if system_prompt else vps_note
+            resp = ant.messages.create(
+                model=model, max_tokens=512,
+                system=full_system,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            output = "".join(b.text for b in resp.content if b.type == "text").strip()
+            tokens_in = resp.usage.input_tokens
+            tokens_out = resp.usage.output_tokens
+
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE tasks SET status='completed', result=?, completed_at=?,"
+                " tokens_in=?, tokens_out=? WHERE id=? AND status='pending'",
+                (json.dumps({"output": output, "source": "vps_fallback"}, ensure_ascii=False),
+                 now_iso(), tokens_in, tokens_out, task_id),
+            )
+    except Exception as e:
+        print(f"[VPS_FALLBACK] AI処理エラー: {e}")
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE tasks SET status='failed', error=?, completed_at=?"
+                " WHERE id=? AND status='pending'",
+                (f"vps_fallback_error: {str(e)[:200]}", now_iso(), task_id),
+            )
+
+    # Web Push でブラウザ通知
+    if push_url and push_token:
+        if output:
+            push_body = f"⚡{requester_name}さんへ（VPSバックアップ応答）\n{output[:150]}"
+        else:
+            push_body = "⚠️ デスクトップAIが応答できない状態です。しばらくしてから再度お試しください。"
+        _web_push(push_url, push_token, "AGO SYSTEM MANAGER", push_body)
+
+    print(f"[VPS_FALLBACK] daemon timeout 30s: task={task_id[:8]} output_len={len(output)}")
+
+
 # ── 認証デコレータ ────────────────────────────────────────────────────────
 
 def require_daemon(f):
@@ -595,6 +707,17 @@ def push_task():
             (task_id, client_id, agent_id, task_type,
              json.dumps(data.get("payload", {})), now_iso()),
         )
+
+    # daemon落ち時フォールバック: ELVIN_task かつ requester_id があれば30秒watchdog起動
+    payload_data = data.get("payload", {})
+    if task_type == "ELVIN_task" and payload_data.get("requester_id"):
+        t = threading.Thread(
+            target=_vps_elvin_task_fallback,
+            args=(task_id, payload_data),
+            daemon=True,
+        )
+        t.start()
+
     return jsonify({"task_id": task_id}), 201
 
 
