@@ -427,6 +427,10 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
         利用トークン料金
       </div>
+      <div class="nav-item" onclick="showTab('order-alerts',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        発注アラート
+      </div>
     </nav>
     <div class="sidebar-footer">
       <div>管理キー認証済み</div>
@@ -737,6 +741,104 @@ textarea{resize:vertical;min-height:120px;font-size:12px;line-height:1.6}
           </tbody>
         </table>
       </div>
+    <!-- ── 発注アラート ── -->
+    <div id="tab-order-alerts" style="display:none">
+      <div class="page-header">
+        <div class="page-title">発注アラート管理</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadOrderAlerts()">更新</button>
+      </div>
+
+      <!-- 顧客選択 -->
+      <div class="card" style="padding:14px 20px;margin-bottom:20px;display:flex;align-items:center;gap:12px">
+        <label style="font-size:13px;color:#4a5568;white-space:nowrap">対象顧客:</label>
+        <select id="alert-client-sel" style="padding:6px 10px;border:1px solid #dde1e9;border-radius:3px;font-size:13px;flex:1;max-width:300px" onchange="loadOrderAlerts()">
+          <option value="">選択してください</option>
+        </select>
+      </div>
+
+      <!-- 今後の通知予定 -->
+      <div class="card" style="margin-bottom:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #f0f2f5">
+          <div style="font-weight:600;font-size:14px">📅 発注期限が近い案件（30日以内）</div>
+        </div>
+        <div id="upcoming-alerts-body" style="padding:12px 20px;font-size:13px;color:#666">顧客を選択してください</div>
+      </div>
+
+      <!-- 品目マスター -->
+      <div class="card" style="margin-bottom:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #f0f2f5">
+          <div style="font-weight:600;font-size:14px">📦 品目マスター（リードタイム設定）</div>
+          <button class="btn btn-primary btn-sm" onclick="showOrderMasterForm()">＋ 品目追加</button>
+        </div>
+        <div id="order-master-form" style="display:none;padding:16px 20px;background:#f7f8fa;border-bottom:1px solid #e8edf5">
+          <div style="display:grid;grid-template-columns:1fr 1fr 80px;gap:10px;margin-bottom:10px">
+            <input id="om-name" placeholder="品目名（例: 輸入LEDサイン）" style="padding:8px 10px;border:1px solid #dde1e9;border-radius:3px;font-size:13px">
+            <input id="om-category" placeholder="カテゴリ（例: 輸入品）" style="padding:8px 10px;border:1px solid #dde1e9;border-radius:3px;font-size:13px">
+            <input id="om-lead" type="number" placeholder="日数" value="14" min="1" max="180" style="padding:8px 10px;border:1px solid #dde1e9;border-radius:3px;font-size:13px">
+          </div>
+          <div style="display:flex;gap:8px">
+            <input id="om-memo" placeholder="備考（任意）" style="flex:1;padding:8px 10px;border:1px solid #dde1e9;border-radius:3px;font-size:13px">
+            <button class="btn btn-primary btn-sm" onclick="addOrderMaster()">追加</button>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('order-master-form').style.display='none'">キャンセル</button>
+          </div>
+        </div>
+        <table>
+          <thead><tr>
+            <th>品目名</th><th>カテゴリ</th><th style="text-align:center">リードタイム</th><th>備考</th><th style="width:60px"></th>
+          </tr></thead>
+          <tbody id="order-master-body">
+            <tr><td colspan="5" class="empty-state">顧客を選択してください</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- アラート一覧 -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #f0f2f5">
+          <div style="font-weight:600;font-size:14px">🔔 着工案件アラート一覧</div>
+          <button class="btn btn-primary btn-sm" onclick="showAlertForm()">＋ アラート登録</button>
+        </div>
+        <div id="alert-form" style="display:none;padding:16px 20px;background:#f7f8fa;border-bottom:1px solid #e8edf5">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+            <div>
+              <label style="font-size:11px;color:#666;display:block;margin-bottom:4px">現場名</label>
+              <input id="af-project" placeholder="例: 新宿AURA看板工事" style="width:100%;padding:8px 10px;border:1px solid #dde1e9;border-radius:3px;font-size:13px">
+            </div>
+            <div>
+              <label style="font-size:11px;color:#666;display:block;margin-bottom:4px">着工予定日</label>
+              <input id="af-date" type="date" style="width:100%;padding:8px 10px;border:1px solid #dde1e9;border-radius:3px;font-size:13px">
+            </div>
+            <div>
+              <label style="font-size:11px;color:#666;display:block;margin-bottom:4px">品目（マスターから選択）</label>
+              <select id="af-item" style="width:100%;padding:8px 10px;border:1px solid #dde1e9;border-radius:3px;font-size:13px" onchange="fillLeadTime()">
+                <option value="">品目を選択</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:11px;color:#666;display:block;margin-bottom:4px">リードタイム（日）</label>
+              <input id="af-lead" type="number" placeholder="14" min="1" max="180" style="width:100%;padding:8px 10px;border:1px solid #dde1e9;border-radius:3px;font-size:13px">
+            </div>
+            <div>
+              <label style="font-size:11px;color:#666;display:block;margin-bottom:4px">LINE WORKSグループ名（通知先）</label>
+              <input id="af-room" placeholder="例: AGOグループ" style="width:100%;padding:8px 10px;border:1px solid #dde1e9;border-radius:3px;font-size:13px">
+            </div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary btn-sm" onclick="addAlert()">登録</button>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('alert-form').style.display='none'">キャンセル</button>
+          </div>
+        </div>
+        <table>
+          <thead><tr>
+            <th>現場名</th><th>品目</th><th style="text-align:center">着工日</th>
+            <th style="text-align:center">発注期限</th><th style="text-align:center">状態</th><th style="width:120px"></th>
+          </tr></thead>
+          <tbody id="alert-list-body">
+            <tr><td colspan="6" class="empty-state">顧客を選択してください</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
     </div>
   </main>
 </div>
@@ -862,6 +964,7 @@ function showTab(name, el) {
   if (name === 'billing') loadBilling();
   if (name === 'memories') populateMemClientFilter();
   if (name === 'staff') populateStaffClientFilter();
+  if (name === 'order-alerts') { populateAlertClientFilter(); loadOrderAlerts(); }
 }
 
 // ── Dashboard ────────────────────────────────────
@@ -1556,6 +1659,187 @@ function renderChartFromCache() {
       }
     }
   });
+}
+
+// ── 発注アラート Tab ──────────────────────────────
+
+let _orderMasterData = [];
+
+async function populateAlertClientFilter() {
+  try {
+    const clients = await api('GET', '/api/v1/clients');
+    const sel = document.getElementById('alert-client-sel');
+    sel.innerHTML = '<option value="">選択してください</option>' +
+      clients.map(c => `<option value="${esc(c.id)}">${esc(c.name)}（${esc(c.id)}）</option>`).join('');
+  } catch(e) {}
+}
+
+async function loadOrderAlerts() {
+  const clientId = document.getElementById('alert-client-sel').value;
+  if (!clientId) return;
+  await Promise.all([loadOrderMaster(clientId), loadAlertList(clientId), loadUpcoming(clientId)]);
+}
+
+async function loadOrderMaster(clientId) {
+  const tbody = document.getElementById('order-master-body');
+  try {
+    const rows = await api('GET', `/api/v1/client/order-master?client_id=${encodeURIComponent(clientId)}`);
+    _orderMasterData = rows;
+    const afSel = document.getElementById('af-item');
+    afSel.innerHTML = '<option value="">品目を選択</option>' +
+      rows.map(r => `<option value="${esc(r.id)}" data-lead="${r.lead_time_days}">${esc(r.name)}（${r.lead_time_days}日前）</option>`).join('');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">品目なし（まず追加してください）</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td><strong>${esc(r.name)}</strong></td>
+        <td style="color:#666">${esc(r.category||'')}</td>
+        <td style="text-align:center;font-weight:600;color:#1a4a9a">${r.lead_time_days}日前</td>
+        <td style="color:#999;font-size:12px">${esc(r.memo||'')}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="deleteOrderMaster('${esc(r.id)}')">削除</button></td>
+      </tr>`).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state" style="color:#ef4444">${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function loadAlertList(clientId) {
+  const tbody = document.getElementById('alert-list-body');
+  try {
+    const rows = await api('GET', `/api/v1/client/construction-alerts?client_id=${encodeURIComponent(clientId)}`);
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">アラートなし</td></tr>';
+      return;
+    }
+    const today = new Date().toISOString().slice(0,10);
+    tbody.innerHTML = rows.map(r => {
+      const cd = new Date(r.construction_date);
+      const od = new Date(cd.getTime() - (r.lead_time_days||14)*86400000);
+      const odStr = od.toISOString().slice(0,10);
+      const isOverdue = odStr <= today && r.status === 'pending';
+      const statusLabel = r.status === 'ordered' ? '<span style="color:#1a7a4a;font-weight:600">✅ 発注済</span>'
+        : r.status === 'cancelled' ? '<span style="color:#999">❌ キャンセル</span>'
+        : isOverdue ? '<span style="color:#c0392b;font-weight:600">🚨 期限超過</span>'
+        : '<span style="color:#b7770d;font-weight:600">⏳ 待機中</span>';
+      return `<tr>
+        <td><strong>${esc(r.project_name)}</strong></td>
+        <td style="font-size:12px">${esc(r.order_item_name||'')}</td>
+        <td style="text-align:center;font-size:12px">${esc(r.construction_date)}</td>
+        <td style="text-align:center;font-size:12px;${isOverdue?'color:#c0392b;font-weight:600':''}">${odStr}</td>
+        <td style="text-align:center">${statusLabel}</td>
+        <td style="display:flex;gap:4px">
+          ${r.status==='pending' ? `<button class="btn btn-success btn-sm" onclick="markOrdered('${esc(r.id)}')">発注済</button>` : ''}
+          <button class="btn btn-danger btn-sm" onclick="deleteAlert('${esc(r.id)}')">削除</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state" style="color:#ef4444">${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function loadUpcoming(clientId) {
+  const el = document.getElementById('upcoming-alerts-body');
+  try {
+    const rows = await api('GET', `/api/v1/client/construction-alerts/upcoming?client_id=${encodeURIComponent(clientId)}`);
+    if (!rows.length) { el.innerHTML = '<span style="color:#1a7a4a">期限が近い案件はありません</span>'; return; }
+    el.innerHTML = rows.map(r => {
+      const days = r.days_until_order;
+      const color = days < 0 ? '#c0392b' : days <= 3 ? '#d68910' : '#1a4a9a';
+      const label = days < 0 ? `${-days}日超過` : days === 0 ? '本日期限' : `あと${days}日`;
+      return `<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f0f2f5">
+        <span style="font-weight:600;color:${color};min-width:70px">${label}</span>
+        <span>${esc(r.project_name)}</span>
+        <span style="color:#666;font-size:12px">${esc(r.order_item_name||'')} / 発注期限: ${esc(r.order_date)}</span>
+      </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML = `<span style="color:#ef4444">${esc(e.message)}</span>`; }
+}
+
+function showOrderMasterForm() {
+  document.getElementById('order-master-form').style.display = '';
+  document.getElementById('om-name').focus();
+}
+
+function showAlertForm() {
+  document.getElementById('alert-form').style.display = '';
+  document.getElementById('af-project').focus();
+}
+
+function fillLeadTime() {
+  const sel = document.getElementById('af-item');
+  const opt = sel.options[sel.selectedIndex];
+  if (opt && opt.dataset.lead) document.getElementById('af-lead').value = opt.dataset.lead;
+}
+
+async function addOrderMaster() {
+  const clientId = document.getElementById('alert-client-sel').value;
+  if (!clientId) return alert('顧客を選択してください');
+  const name = document.getElementById('om-name').value.trim();
+  const lead = parseInt(document.getElementById('om-lead').value) || 14;
+  if (!name) return alert('品目名を入力してください');
+  try {
+    await api('POST', `/api/v1/client/order-master?client_id=${encodeURIComponent(clientId)}`, {
+      name, category: document.getElementById('om-category').value.trim(),
+      lead_time_days: lead, memo: document.getElementById('om-memo').value.trim()
+    });
+    document.getElementById('order-master-form').style.display = 'none';
+    ['om-name','om-category','om-memo'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('om-lead').value = '14';
+    await loadOrderMaster(clientId);
+  } catch(e) { alert('追加失敗: ' + e.message); }
+}
+
+async function deleteOrderMaster(itemId) {
+  if (!confirm('この品目を削除しますか？')) return;
+  const clientId = document.getElementById('alert-client-sel').value;
+  try {
+    await api('DELETE', `/api/v1/client/order-master/${itemId}?client_id=${encodeURIComponent(clientId)}`);
+    await loadOrderMaster(clientId);
+  } catch(e) { alert('削除失敗: ' + e.message); }
+}
+
+async function addAlert() {
+  const clientId = document.getElementById('alert-client-sel').value;
+  if (!clientId) return alert('顧客を選択してください');
+  const project = document.getElementById('af-project').value.trim();
+  const date = document.getElementById('af-date').value;
+  if (!project || !date) return alert('現場名と着工日は必須です');
+  const sel = document.getElementById('af-item');
+  const itemId = sel.value;
+  const itemName = itemId ? sel.options[sel.selectedIndex].text.replace(/（.*）$/, '') : '';
+  const lead = parseInt(document.getElementById('af-lead').value) || 14;
+  try {
+    await api('POST', `/api/v1/client/construction-alerts?client_id=${encodeURIComponent(clientId)}`, {
+      project_name: project, construction_date: date,
+      order_item_id: itemId, order_item_name: itemName,
+      lead_time_days: lead, lineworks_room: document.getElementById('af-room').value.trim()
+    });
+    document.getElementById('alert-form').style.display = 'none';
+    ['af-project','af-room'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('af-date').value = '';
+    document.getElementById('af-lead').value = '';
+    await Promise.all([loadAlertList(clientId), loadUpcoming(clientId)]);
+  } catch(e) { alert('登録失敗: ' + e.message); }
+}
+
+async function markOrdered(alertId) {
+  const clientId = document.getElementById('alert-client-sel').value;
+  try {
+    await api('PATCH', `/api/v1/client/construction-alerts/${alertId}?client_id=${encodeURIComponent(clientId)}`, { status: 'ordered' });
+    await Promise.all([loadAlertList(clientId), loadUpcoming(clientId)]);
+  } catch(e) { alert('更新失敗: ' + e.message); }
+}
+
+async function deleteAlert(alertId) {
+  if (!confirm('このアラートを削除しますか？')) return;
+  const clientId = document.getElementById('alert-client-sel').value;
+  try {
+    await api('DELETE', `/api/v1/client/construction-alerts/${alertId}?client_id=${encodeURIComponent(clientId)}`);
+    await Promise.all([loadAlertList(clientId), loadUpcoming(clientId)]);
+  } catch(e) { alert('削除失敗: ' + e.message); }
 }
 
 // ── Billing Tab ───────────────────────────────────

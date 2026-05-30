@@ -178,6 +178,31 @@ def init_db():
                 UNIQUE(client_id, line_user_id),
                 FOREIGN KEY (client_id) REFERENCES clients(id)
             );
+            CREATE TABLE IF NOT EXISTS order_master (
+                id             TEXT PRIMARY KEY,
+                client_id      TEXT NOT NULL,
+                name           TEXT NOT NULL,
+                category       TEXT DEFAULT '',
+                lead_time_days INTEGER NOT NULL DEFAULT 14,
+                unit           TEXT DEFAULT '',
+                memo           TEXT DEFAULT '',
+                created_at     TEXT,
+                FOREIGN KEY (client_id) REFERENCES clients(id)
+            );
+            CREATE TABLE IF NOT EXISTS construction_alerts (
+                id                TEXT PRIMARY KEY,
+                client_id         TEXT NOT NULL,
+                project_name      TEXT NOT NULL,
+                construction_date TEXT NOT NULL,
+                order_item_id     TEXT DEFAULT '',
+                order_item_name   TEXT DEFAULT '',
+                lead_time_days    INTEGER DEFAULT 14,
+                lineworks_room    TEXT DEFAULT '',
+                status            TEXT DEFAULT 'pending',
+                notified_at       TEXT,
+                created_at        TEXT,
+                FOREIGN KEY (client_id) REFERENCES clients(id)
+            );
         """)
         # 既存DBへのカラム追加（冪等）
         for sql in [
@@ -2134,10 +2159,295 @@ def internal_save_conversation(client_id, agent_id):
     return jsonify({"ok": True})
 
 
+# ── 発注アラート共通認証ヘルパー ─────────────────────────────────────────
+
+def _auth_client_for_alerts():
+    """client token OR daemon secret + client_id の両方を受け入れる"""
+    token = client_token_from_request()
+    if token:
+        return get_client_by_token(token)
+    secret = request.headers.get("X-Daemon-Secret", "")
+    if secret == DAEMON_SECRET:
+        data = request.get_json(force=True, silent=True) or {}
+        client_id = request.args.get("client_id") or data.get("client_id", "")
+        if client_id:
+            with get_db() as conn:
+                return conn.execute("SELECT * FROM clients WHERE id = ?", (client_id,)).fetchone()
+    return None
+
+
+# ── 発注品目マスター API ─────────────────────────────────────────────────
+
+@app.route("/api/v1/client/order-master", methods=["GET"])
+def get_order_master():
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM order_master WHERE client_id = ? ORDER BY created_at ASC",
+            (client["id"],)
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/client/order-master", methods=["POST"])
+def create_order_master():
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True)
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    item_id = str(uuid.uuid4())[:12]
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO order_master (id, client_id, name, category, lead_time_days, unit, memo, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (item_id, client["id"], name,
+             data.get("category", ""), int(data.get("lead_time_days", 14)),
+             data.get("unit", ""), data.get("memo", ""), now_iso())
+        )
+    return jsonify({"id": item_id, "name": name}), 201
+
+
+@app.route("/api/v1/client/order-master/<item_id>", methods=["PATCH"])
+def update_order_master(item_id):
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True)
+    allowed = {"name", "category", "lead_time_days", "unit", "memo"}
+    fields = {k: v for k, v in data.items() if k in allowed}
+    if not fields:
+        return jsonify({"error": "no updatable fields"}), 400
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    with get_db() as conn:
+        conn.execute(
+            f"UPDATE order_master SET {set_clause} WHERE id = ? AND client_id = ?",
+            (*fields.values(), item_id, client["id"])
+        )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/v1/client/order-master/<item_id>", methods=["DELETE"])
+def delete_order_master(item_id):
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM order_master WHERE id = ? AND client_id = ?",
+            (item_id, client["id"])
+        )
+    return jsonify({"ok": True})
+
+
+# ── 着工アラート API ──────────────────────────────────────────────────────
+
+@app.route("/api/v1/client/construction-alerts", methods=["GET"])
+def get_construction_alerts():
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM construction_alerts WHERE client_id = ? ORDER BY construction_date ASC",
+            (client["id"],)
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/client/construction-alerts/upcoming", methods=["GET"])
+def get_upcoming_construction_alerts():
+    """発注期限が今日から30日以内のアラートを返す"""
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    from datetime import date, timedelta
+    today = date.today().isoformat()
+    future = (date.today() + timedelta(days=30)).isoformat()
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM construction_alerts WHERE client_id = ? AND status = 'pending'"
+            " ORDER BY construction_date ASC",
+            (client["id"],)
+        ).fetchall()
+    result = []
+    for r in rows:
+        try:
+            cd = r["construction_date"]
+            ltd = r["lead_time_days"] or 14
+            from datetime import date as _date
+            cd_date = _date.fromisoformat(cd)
+            order_date = cd_date - timedelta(days=ltd)
+            order_date_str = order_date.isoformat()
+            if order_date_str <= future:
+                d = dict(r)
+                d["order_date"] = order_date_str
+                d["days_until_order"] = (order_date - _date.today()).days
+                result.append(d)
+        except Exception:
+            pass
+    return jsonify(result)
+
+
+@app.route("/api/v1/client/construction-alerts", methods=["POST"])
+def create_construction_alert():
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True)
+    project_name = data.get("project_name", "").strip()
+    construction_date = data.get("construction_date", "").strip()
+    if not project_name or not construction_date:
+        return jsonify({"error": "project_name and construction_date are required"}), 400
+    alert_id = str(uuid.uuid4())[:12]
+    lead_time = int(data.get("lead_time_days", 14))
+    item_id = data.get("order_item_id", "")
+    item_name = data.get("order_item_name", "")
+    if item_id and not item_name:
+        with get_db() as conn:
+            item = conn.execute("SELECT name FROM order_master WHERE id = ?", (item_id,)).fetchone()
+            if item:
+                item_name = item["name"]
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO construction_alerts"
+            " (id, client_id, project_name, construction_date, order_item_id,"
+            "  order_item_name, lead_time_days, lineworks_room, status, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+            (alert_id, client["id"], project_name, construction_date,
+             item_id, item_name, lead_time,
+             data.get("lineworks_room", ""), now_iso())
+        )
+    return jsonify({"id": alert_id, "project_name": project_name}), 201
+
+
+@app.route("/api/v1/client/construction-alerts/<alert_id>", methods=["PATCH"])
+def update_construction_alert(alert_id):
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True)
+    allowed = {"project_name", "construction_date", "order_item_name",
+               "lead_time_days", "lineworks_room", "status"}
+    fields = {k: v for k, v in data.items() if k in allowed}
+    if not fields:
+        return jsonify({"error": "no updatable fields"}), 400
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    with get_db() as conn:
+        conn.execute(
+            f"UPDATE construction_alerts SET {set_clause} WHERE id = ? AND client_id = ?",
+            (*fields.values(), alert_id, client["id"])
+        )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/v1/client/construction-alerts/<alert_id>", methods=["DELETE"])
+def delete_construction_alert(alert_id):
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM construction_alerts WHERE id = ? AND client_id = ?",
+            (alert_id, client["id"])
+        )
+    return jsonify({"ok": True})
+
+
+# ── 発注アラートスケジューラ ────────────────────────────────────────────
+
+def _check_construction_alerts():
+    """発注期限が到来した着工アラートをチェックして lineworks_send タスクを作成する"""
+    from datetime import date, timedelta
+    today = date.today()
+    today_str = today.isoformat()
+
+    with get_db() as conn:
+        alerts = conn.execute(
+            "SELECT ca.*, c.name as client_name FROM construction_alerts ca"
+            " JOIN clients c ON ca.client_id = c.id"
+            " WHERE ca.status = 'pending'"
+        ).fetchall()
+
+    for alert in alerts:
+        try:
+            cd = date.fromisoformat(alert["construction_date"])
+            ltd = alert["lead_time_days"] or 14
+            order_date = cd - timedelta(days=ltd)
+
+            if today < order_date:
+                continue
+
+            last_notified = alert["notified_at"] or ""
+            if last_notified and last_notified[:10] == today_str:
+                continue
+
+            item_name = alert["order_item_name"] or "指定品目"
+            room = alert["lineworks_room"] or ""
+            days_late = (today - order_date).days
+
+            if days_late == 0:
+                urgency = "⚠️ 本日が発注期限です"
+            elif days_late > 0:
+                urgency = f"🚨 発注期限を {days_late} 日超過しています"
+            else:
+                urgency = f"📅 発注期限まであと {-days_late} 日です"
+
+            message = (
+                f"【発注アラート】{urgency}\n"
+                f"現場: {alert['project_name']}\n"
+                f"品目: {item_name}（リードタイム: {ltd}日）\n"
+                f"着工予定: {alert['construction_date']}\n"
+                f"発注期限: {order_date.isoformat()}\n"
+                f"※ 発注が完了したらELVIN ADMINで「発注済」に更新してください"
+            )
+
+            task_id = str(uuid.uuid4())
+            payload = json.dumps({
+                "message": message,
+                "room_name": room,
+            }, ensure_ascii=False)
+
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT INTO tasks (id, client_id, type, payload, status, created_at)"
+                    " VALUES (?, ?, 'lineworks_send', ?, 'pending', ?)",
+                    (task_id, alert["client_id"], payload, now_iso())
+                )
+                conn.execute(
+                    "UPDATE construction_alerts SET notified_at = ? WHERE id = ?",
+                    (now_iso(), alert["id"])
+                )
+            print(f"[SCHEDULER] アラート通知タスク作成: {alert['project_name']} / {item_name}")
+
+        except Exception as e:
+            print(f"[SCHEDULER] アラート処理エラー id={alert['id']}: {e}")
+
+
+def _alert_scheduler_loop():
+    import time as _time
+    from datetime import datetime as _dt
+    _time.sleep(10)  # 起動直後は待機
+    while True:
+        try:
+            now_h = _dt.now().hour
+            if 7 <= now_h <= 21:  # 業務時間帯のみ実行
+                _check_construction_alerts()
+        except Exception as e:
+            print(f"[SCHEDULER] ループエラー: {e}")
+        _time.sleep(3600)  # 1時間ごと
+
+
 # ── 起動 ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     init_db()
+    _sched_thread = threading.Thread(target=_alert_scheduler_loop, daemon=True, name="alert-scheduler")
+    _sched_thread.start()
     print(f"[ELVIN VPS API] http://0.0.0.0:{PORT}")
     print(f"[ELVIN VPS API] DAEMON_SECRET={DAEMON_SECRET!r}")
     app.run(host="0.0.0.0", port=PORT, debug=False)
