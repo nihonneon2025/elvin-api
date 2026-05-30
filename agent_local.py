@@ -337,14 +337,26 @@ def execute(task: dict, agent: dict) -> dict:
         # ディスパッチャーはCLAUDE.mdを読ませないためホームで実行
         claude_cwd = str(Path.home()) if _is_dispatcher else work_dir
 
-        # プロンプト内の画像URLを検出してローカルに一時保存 → --image フラグで渡す
+        # プロンプト内の画像データを検出して一時ファイルに保存 → --image フラグで渡す
         import re, tempfile, urllib.request as _ureq
         _img_flags = []
         _tmp_files = []
+        # base64埋め込み形式: [IMAGE_B64:xxxx]
+        for _b64 in re.findall(r'\[IMAGE_B64:([A-Za-z0-9+/=]+)\]', full_prompt):
+            try:
+                _tmp = tempfile.NamedTemporaryFile(suffix='.jpg', delete=False)
+                _tmp.write(base64.b64decode(_b64))
+                _tmp.close()
+                _img_flags += ["--image", _tmp.name]
+                _tmp_files.append(_tmp.name)
+            except Exception as _ie:
+                print(f"[{ts()}] base64画像展開エラー: {_ie}")
+        # URL形式フォールバック: URL:https://...jpg
         for _img_url in re.findall(r'URL:(https?://\S+\.(?:jpg|jpeg|png|gif|webp))', full_prompt, re.IGNORECASE):
             try:
                 _tmp = tempfile.NamedTemporaryFile(suffix='.jpg', delete=False)
                 _ureq.urlretrieve(_img_url, _tmp.name)
+                _tmp.close()
                 _img_flags += ["--image", _tmp.name]
                 _tmp_files.append(_tmp.name)
             except Exception as _ie:
