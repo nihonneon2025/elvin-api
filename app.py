@@ -217,6 +217,20 @@ def init_db():
                 created_at        TEXT,
                 FOREIGN KEY (client_id) REFERENCES clients(id)
             );
+            CREATE TABLE IF NOT EXISTS checklist_alerts (
+                id                TEXT PRIMARY KEY,
+                client_id         TEXT NOT NULL,
+                construction_name TEXT NOT NULL,
+                construction_date TEXT NOT NULL,
+                lineworks_room    TEXT DEFAULT '',
+                check_materials   INTEGER DEFAULT 0,
+                check_contractor  INTEGER DEFAULT 0,
+                check_instruction INTEGER DEFAULT 0,
+                status            TEXT DEFAULT 'pending',
+                notified_at       TEXT,
+                created_at        TEXT,
+                FOREIGN KEY (client_id) REFERENCES clients(id)
+            );
         """)
         # 既存DBへのカラム追加（冪等）
         for sql in [
@@ -2446,6 +2460,77 @@ def delete_deadline_alert(alert_id):
     return jsonify({"ok": True})
 
 
+# ── 着工チェックリスト CRUD ──────────────────────────────────────────────
+
+@app.route("/api/v1/client/checklist-alerts", methods=["GET"])
+def get_checklist_alerts():
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM checklist_alerts WHERE client_id = ? ORDER BY construction_date ASC",
+            (client["id"],)
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/client/checklist-alerts", methods=["POST"])
+def create_checklist_alert():
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True)
+    construction_name = data.get("construction_name", "").strip()
+    construction_date = data.get("construction_date", "").strip()
+    lineworks_room = data.get("lineworks_room", "").strip()
+    if not construction_name or not construction_date or not lineworks_room:
+        return jsonify({"error": "construction_name, construction_date, lineworks_room are required"}), 400
+    alert_id = str(uuid.uuid4())[:12]
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO checklist_alerts"
+            " (id, client_id, construction_name, construction_date, lineworks_room,"
+            "  check_materials, check_contractor, check_instruction, status, created_at)"
+            " VALUES (?, ?, ?, ?, ?, 0, 0, 0, 'pending', ?)",
+            (alert_id, client["id"], construction_name, construction_date, lineworks_room, now_iso())
+        )
+    return jsonify({"id": alert_id, "construction_name": construction_name}), 201
+
+
+@app.route("/api/v1/client/checklist-alerts/<alert_id>", methods=["PATCH"])
+def update_checklist_alert(alert_id):
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True)
+    allowed = {"construction_name", "construction_date", "lineworks_room",
+               "check_materials", "check_contractor", "check_instruction", "status"}
+    fields = {k: v for k, v in data.items() if k in allowed}
+    if not fields:
+        return jsonify({"error": "no updatable fields"}), 400
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    with get_db() as conn:
+        conn.execute(
+            f"UPDATE checklist_alerts SET {set_clause} WHERE id = ? AND client_id = ?",
+            (*fields.values(), alert_id, client["id"])
+        )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/v1/client/checklist-alerts/<alert_id>", methods=["DELETE"])
+def delete_checklist_alert(alert_id):
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM checklist_alerts WHERE id = ? AND client_id = ?",
+            (alert_id, client["id"])
+        )
+    return jsonify({"ok": True})
+
+
 # ── 発注アラートスケジューラ ────────────────────────────────────────────
 
 def _check_construction_alerts():
@@ -2581,6 +2666,85 @@ def _check_deadline_alerts():
             print(f"[SCHEDULER] 期限アラート処理エラー id={alert['id']}: {e}")
 
 
+def _check_checklist_alerts():
+    """着工7日前チェックリストをチェックして未確認項目をLINE通知する"""
+    from datetime import date, timedelta
+    today = date.today()
+    today_str = today.isoformat()
+    notify_threshold = today + timedelta(days=7)
+
+    with get_db() as conn:
+        alerts = conn.execute(
+            "SELECT ca.*, c.name as client_name FROM checklist_alerts ca"
+            " JOIN clients c ON ca.client_id = c.id"
+            " WHERE ca.status = 'pending'"
+        ).fetchall()
+
+    for alert in alerts:
+        try:
+            cd = date.fromisoformat(alert["construction_date"])
+
+            if cd > notify_threshold:
+                continue
+
+            last_notified = alert["notified_at"] or ""
+            if last_notified and last_notified[:10] == today_str:
+                continue
+
+            unchecked = []
+            if not alert["check_materials"]:
+                unchecked.append("部材確定")
+            if not alert["check_contractor"]:
+                unchecked.append("下請確定")
+            if not alert["check_instruction"]:
+                unchecked.append("施工指示書配布")
+
+            if not unchecked:
+                with get_db() as conn:
+                    conn.execute(
+                        "UPDATE checklist_alerts SET status = 'completed', notified_at = ? WHERE id = ?",
+                        (now_iso(), alert["id"])
+                    )
+                continue
+
+            days_until = (cd - today).days
+            if days_until > 0:
+                timing = f"着工まであと {days_until} 日"
+            elif days_until == 0:
+                timing = "本日着工"
+            else:
+                timing = f"着工日を {-days_until} 日超過"
+
+            message = (
+                f"【着工チェックリスト】⚠️ 未確認項目があります\n"
+                f"現場: {alert['construction_name']}\n"
+                f"着工予定: {alert['construction_date']}（{timing}）\n"
+                f"未確認: {' / '.join(unchecked)}\n"
+                f"※ ELVIN MANAGERでチェックを入れてください"
+            )
+
+            task_id = str(uuid.uuid4())
+            payload = json.dumps({
+                "message": message,
+                "room_name": alert["lineworks_room"],
+            }, ensure_ascii=False)
+
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT INTO tasks (id, client_id, type, payload, status, created_at)"
+                    " VALUES (?, ?, 'lineworks_send', ?, 'pending', ?)",
+                    (task_id, alert["client_id"], payload, now_iso())
+                )
+                conn.execute(
+                    "UPDATE checklist_alerts SET notified_at = ? WHERE id = ?",
+                    (now_iso(), alert["id"])
+                )
+            print(f"[SCHEDULER] チェックリスト通知タスク作成: {alert['construction_name']} / 未確認: {', '.join(unchecked)}")
+
+        except Exception as e:
+            print(f"[SCHEDULER] チェックリスト処理エラー id={alert['id']}: {e}")
+
+
 def _alert_scheduler_loop():
     import time as _time
     from datetime import datetime as _dt
@@ -2591,6 +2755,7 @@ def _alert_scheduler_loop():
             if 7 <= now_h <= 21:  # 業務時間帯のみ実行
                 _check_construction_alerts()
                 _check_deadline_alerts()
+                _check_checklist_alerts()
         except Exception as e:
             print(f"[SCHEDULER] ループエラー: {e}")
         _time.sleep(3600)  # 1時間ごと
