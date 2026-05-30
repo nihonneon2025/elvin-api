@@ -1234,9 +1234,13 @@ def line_webhook_client(client_token):
         else:
             continue
 
-        source = source  # already set above
         group_id = source.get("groupId", "")
         line_user_id = source.get("userId", "")
+
+        # グループチャットの場合: 「ウルバン」または「urvan」が含まれなければ無視
+        if group_id and msg_type == "text":
+            if "ウルバン" not in text and "urvan" not in text.lower():
+                continue
 
         # LINE WORKS リプライ（引用）コンテキストを抽出
         quote_text = ""
