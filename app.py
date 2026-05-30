@@ -3331,7 +3331,10 @@ def voice_cleanup():
     )
 
     try:
-        api_key = (client.get("anthropic_api_key") or ANTHROPIC_API_KEY or "").strip()
+        try:
+            api_key = (client["anthropic_api_key"] or ANTHROPIC_API_KEY or "").strip()
+        except Exception:
+            api_key = (ANTHROPIC_API_KEY or "").strip()
         if not api_key:
             return jsonify({"text": raw})
         import anthropic as _ant
