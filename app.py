@@ -3291,6 +3291,61 @@ def generate_manual():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/v1/client/voice-cleanup", methods=["POST"])
+def voice_cleanup():
+    """音声入力テキストの自動清書"""
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True)
+    raw = (data.get("raw") or "").strip()
+    context = (data.get("context") or "テキスト入力").strip()
+    if not raw:
+        return jsonify({"error": "raw is required"}), 400
+
+    with get_db() as conn:
+        projects = conn.execute(
+            "SELECT DISTINCT name FROM projects WHERE client_id = ? LIMIT 30",
+            (client["id"],)
+        ).fetchall()
+        staff = conn.execute(
+            "SELECT DISTINCT name FROM staff WHERE client_id = ? LIMIT 30",
+            (client["id"],)
+        ).fetchall()
+
+    project_names = "、".join(r["name"] for r in projects) or "なし"
+    staff_names   = "、".join(r["name"] for r in staff)    or "なし"
+
+    prompt = (
+        f"以下の音声認識テキストを清書してください。\n\n"
+        f"【この会社の案件名】{project_names}\n"
+        f"【スタッフ名】{staff_names}\n"
+        f"【入力先の用途】{context}\n\n"
+        f"【清書ルール】\n"
+        "- えーと・あの・まあ・うーん等のフィラーを除去\n"
+        "- 用途に合った長さ・形式に整える（タスク名なら短く、メモなら文章で）\n"
+        "- 案件名・スタッフ名は上記リストの表記に統一\n"
+        "- 同じ内容の繰り返しを除去\n"
+        "- 清書後のテキストだけ返す（説明・補足は不要）\n\n"
+        f"【音声認識テキスト】\n{raw}"
+    )
+
+    try:
+        api_key = (client.get("anthropic_api_key") or ANTHROPIC_API_KEY or "").strip()
+        if not api_key:
+            return jsonify({"text": raw})
+        import anthropic as _ant
+        ant = _ant.Anthropic(api_key=api_key)
+        resp = ant.messages.create(
+            model=ANTHROPIC_MODEL, max_tokens=400,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        cleaned = "".join(b.text for b in resp.content if b.type == "text").strip()
+        return jsonify({"text": cleaned or raw})
+    except Exception as e:
+        return jsonify({"text": raw, "error": str(e)})
+
+
 def _alert_scheduler_loop():
     import time as _time
     from datetime import datetime as _dt, timezone as _tz, timedelta as _td
