@@ -203,7 +203,6 @@ def init_db():
                 created_at        TEXT,
                 FOREIGN KEY (client_id) REFERENCES clients(id)
             );
-        """)
             CREATE TABLE IF NOT EXISTS deadline_alerts (
                 id                TEXT PRIMARY KEY,
                 client_id         TEXT NOT NULL,
