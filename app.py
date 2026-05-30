@@ -2677,9 +2677,9 @@ def apply_project_routine():
 
 def _check_construction_alerts():
     """発注期限が到来した着工アラートをルーム単位で束ねて1通送信する"""
-    from datetime import date, timedelta
+    from datetime import datetime as _dt, timezone as _tz, timedelta
     from collections import defaultdict
-    today = date.today()
+    today = _dt.now(_tz(timedelta(hours=9))).date()
     today_str = today.isoformat()
 
     with get_db() as conn:
@@ -2749,9 +2749,9 @@ def _check_construction_alerts():
 
 def _check_deadline_alerts():
     """期限アラートをルーム単位で束ねて1通送信する"""
-    from datetime import date, timedelta
+    from datetime import datetime as _dt, timezone as _tz, timedelta
     from collections import defaultdict
-    today = date.today()
+    today = _dt.now(_tz(timedelta(hours=9))).date()
     today_str = today.isoformat()
 
     with get_db() as conn:
@@ -2823,9 +2823,9 @@ def _check_deadline_alerts():
 
 def _check_checklist_alerts():
     """着工7日前チェックリストをルーム単位で束ねて1通送信する"""
-    from datetime import date, timedelta
+    from datetime import datetime as _dt, timezone as _tz, timedelta
     from collections import defaultdict
-    today = date.today()
+    today = _dt.now(_tz(timedelta(hours=9))).date()
     today_str = today.isoformat()
     notify_threshold = today + timedelta(days=7)
 
@@ -2976,11 +2976,13 @@ def delete_recurring_task(task_id):
 
 def _check_recurring_tasks():
     """繰り返しタスクをチェックして通知する（ルーム単位にまとめる）"""
-    from datetime import date, datetime as _dt
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
     from collections import defaultdict
-    today = date.today()
+    _JST = _tz(_td(hours=9))
+    now_jst = _dt.now(_JST)
+    today = now_jst.date()
     today_str = today.isoformat()
-    now_hour = _dt.now().hour
+    now_hour = now_jst.hour
     weekday = today.weekday()  # 0=月曜 … 6=日曜
     month_day = today.day
 
@@ -3291,12 +3293,13 @@ def generate_manual():
 
 def _alert_scheduler_loop():
     import time as _time
-    from datetime import datetime as _dt
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    _JST = _tz(_td(hours=9))
     _time.sleep(10)  # 起動直後は待機
     while True:
         try:
-            now_h = _dt.now().hour
-            if 7 <= now_h <= 21:  # 業務時間帯のみ実行
+            now_h = _dt.now(_JST).hour
+            if 7 <= now_h <= 21:  # 業務時間帯のみ実行（JST）
                 _check_construction_alerts()
                 _check_deadline_alerts()
                 _check_checklist_alerts()
