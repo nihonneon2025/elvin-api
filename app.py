@@ -2640,7 +2640,7 @@ def _check_deadline_alerts():
                 f"現場: {alert['project_name']}\n"
                 f"種別: {alert['category']}\n"
                 f"期限: {alert['deadline']}\n"
-                + (f"メモ: {alert['memo']}\n" if alert.get("memo") else "")
+                + (f"メモ: {alert['memo']}\n" if alert["memo"] else "")
                 + f"※ 完了したらELVIN MANAGERで「完了」にしてください"
             )
 
