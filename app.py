@@ -276,6 +276,8 @@ def _vps_elvin_task_fallback(task_id: str, payload: dict):
         if ag:
             system_prompt = ag["system_prompt"] or ""
 
+    FALLBACK_HEADER = "🔴 DAEMONが起動していません。VPSバックアップで対応中です。"
+
     # VPS側でAnthropicを呼んでテキスト回答を生成
     output = ""
     tokens_in = tokens_out = 0
@@ -292,9 +294,9 @@ def _vps_elvin_task_fallback(task_id: str, payload: dict):
 
             ant = _ant.Anthropic(api_key=api_key)
             vps_note = (
-                "【VPSバックアップモード: デスクトップAIが応答不可のため代替処理中。"
-                "ファイル操作・PowerShell実行・LINE WORKSへの送付はできません。"
-                "テキスト回答のみ提供してください。】"
+                f"【VPSバックアップモード】{FALLBACK_HEADER}\n"
+                "ファイル操作・PowerShell実行・LINE WORKSへの送付はできません。\n"
+                "回答の最初の1行に必ず「🔴 DAEMONが起動していません。VPSバックアップで対応中です。」と書いてから回答してください。"
             )
             full_system = f"{system_prompt}\n\n{vps_note}" if system_prompt else vps_note
             resp = ant.messages.create(
@@ -303,6 +305,9 @@ def _vps_elvin_task_fallback(task_id: str, payload: dict):
                 messages=[{"role": "user", "content": prompt}],
             )
             output = "".join(b.text for b in resp.content if b.type == "text").strip()
+            # AIがヘッダーを書き忘れた場合は強制付与
+            if output and FALLBACK_HEADER not in output:
+                output = f"{FALLBACK_HEADER}\n{output}"
             tokens_in = resp.usage.input_tokens
             tokens_out = resp.usage.output_tokens
 
@@ -322,12 +327,12 @@ def _vps_elvin_task_fallback(task_id: str, payload: dict):
                 (f"vps_fallback_error: {str(e)[:200]}", now_iso(), task_id),
             )
 
-    # Web Push でブラウザ通知
+    # Web Push でブラウザ通知（常にFALLBACK_HEADERを先頭に付与）
     if push_url and push_token:
         if output:
-            push_body = f"⚡{requester_name}さんへ（VPSバックアップ応答）\n{output[:150]}"
+            push_body = f"{FALLBACK_HEADER}\n{requester_name}さんへ:\n{output.replace(FALLBACK_HEADER, '').strip()[:120]}"
         else:
-            push_body = "⚠️ デスクトップAIが応答できない状態です。しばらくしてから再度お試しください。"
+            push_body = f"{FALLBACK_HEADER}\nしばらくしてから再度お試しください。"
         _web_push(push_url, push_token, "AGO SYSTEM MANAGER", push_body)
 
     print(f"[VPS_FALLBACK] daemon timeout 30s: task={task_id[:8]} output_len={len(output)}")
