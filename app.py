@@ -3305,7 +3305,7 @@ def voice_cleanup():
 
     with get_db() as conn:
         projects = conn.execute(
-            "SELECT DISTINCT name FROM projects WHERE client_id = ? LIMIT 30",
+            "SELECT DISTINCT project_name FROM construction_alerts WHERE client_id = ? AND project_name != '' LIMIT 30",
             (client["id"],)
         ).fetchall()
         staff = conn.execute(
@@ -3313,8 +3313,8 @@ def voice_cleanup():
             (client["id"],)
         ).fetchall()
 
-    project_names = "、".join(r["name"] for r in projects) or "なし"
-    staff_names   = "、".join(r["name"] for r in staff)    or "なし"
+    project_names = "、".join(r["project_name"] for r in projects) or "なし"
+    staff_names   = "、".join(r["name"] for r in staff)             or "なし"
 
     prompt = (
         f"以下の音声認識テキストを清書してください。\n\n"
