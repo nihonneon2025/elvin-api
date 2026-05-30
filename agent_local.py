@@ -336,8 +336,22 @@ def execute(task: dict, agent: dict) -> dict:
         work_dir = WORK_DIR
         # ディスパッチャーはCLAUDE.mdを読ませないためホームで実行
         claude_cwd = str(Path.home()) if _is_dispatcher else work_dir
+
+        # プロンプト内の画像URLを検出してローカルに一時保存 → --image フラグで渡す
+        import re, tempfile, urllib.request as _ureq
+        _img_flags = []
+        _tmp_files = []
+        for _img_url in re.findall(r'URL:(https?://\S+\.(?:jpg|jpeg|png|gif|webp))', full_prompt, re.IGNORECASE):
+            try:
+                _tmp = tempfile.NamedTemporaryFile(suffix='.jpg', delete=False)
+                _ureq.urlretrieve(_img_url, _tmp.name)
+                _img_flags += ["--image", _tmp.name]
+                _tmp_files.append(_tmp.name)
+            except Exception as _ie:
+                print(f"[{ts()}] 画像DLエラー: {_ie}")
+
         result = subprocess.run(
-            ["claude", "--print", "--dangerously-skip-permissions", "-p", full_prompt],
+            ["claude", "--print", "--dangerously-skip-permissions"] + _img_flags + ["-p", full_prompt],
             capture_output=True,
             text=True,
             timeout=600,
@@ -345,6 +359,9 @@ def execute(task: dict, agent: dict) -> dict:
             encoding="utf-8",
             errors="replace",
         )
+        for _tf in _tmp_files:
+            try: os.unlink(_tf)
+            except: pass
         if platform.system() == "Windows":
             os.system("title ELVIN")
         output = result.stdout.strip()[:3000] if result.stdout else ""
