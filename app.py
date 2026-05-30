@@ -2574,6 +2574,32 @@ _ROUTINE_STEPS = [
 ]
 
 
+@app.route("/api/v1/client/project-routines", methods=["GET"])
+def get_project_routines():
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM project_routines WHERE client_id = ? ORDER BY construction_date ASC",
+            (client["id"],)
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/client/project-routines/<routine_id>", methods=["DELETE"])
+def delete_project_routine(routine_id):
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM project_routines WHERE id = ? AND client_id = ?",
+            (routine_id, client["id"])
+        )
+    return jsonify({"ok": True})
+
+
 @app.route("/api/v1/client/project-routines/apply", methods=["POST"])
 def apply_project_routine():
     client = _auth_client_for_alerts()
