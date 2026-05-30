@@ -240,6 +240,41 @@ def init_db():
                 created_at        TEXT,
                 FOREIGN KEY (client_id) REFERENCES clients(id)
             );
+            CREATE TABLE IF NOT EXISTS recurring_tasks (
+                id               TEXT PRIMARY KEY,
+                client_id        TEXT NOT NULL,
+                title            TEXT NOT NULL,
+                recurrence_type  TEXT NOT NULL DEFAULT 'weekly',
+                recurrence_day   INTEGER DEFAULT 1,
+                notify_time      TEXT DEFAULT '08:00',
+                lineworks_room   TEXT DEFAULT '',
+                enabled          INTEGER DEFAULT 1,
+                last_notified    TEXT,
+                created_at       TEXT,
+                FOREIGN KEY (client_id) REFERENCES clients(id)
+            );
+            CREATE TABLE IF NOT EXISTS project_costs (
+                id           TEXT PRIMARY KEY,
+                client_id    TEXT NOT NULL,
+                project_name TEXT NOT NULL,
+                cost_type    TEXT NOT NULL,
+                amount       INTEGER NOT NULL DEFAULT 0,
+                memo         TEXT DEFAULT '',
+                date         TEXT NOT NULL,
+                created_at   TEXT,
+                FOREIGN KEY (client_id) REFERENCES clients(id)
+            );
+            CREATE TABLE IF NOT EXISTS manuals (
+                id         TEXT PRIMARY KEY,
+                client_id  TEXT NOT NULL,
+                title      TEXT NOT NULL,
+                category   TEXT NOT NULL DEFAULT '工種',
+                content    TEXT NOT NULL DEFAULT '',
+                tags       TEXT DEFAULT '',
+                created_at TEXT,
+                updated_at TEXT,
+                FOREIGN KEY (client_id) REFERENCES clients(id)
+            );
         """)
         # 既存DBへのカラム追加（冪等）
         for sql in [
@@ -2867,6 +2902,393 @@ def _check_checklist_alerts():
             print(f"[SCHEDULER] チェックリストまとめエラー client={client_id}: {e}")
 
 
+# ── 繰り返しタスク API (C-10) ────────────────────────────────────────────
+
+@app.route("/api/v1/client/recurring-tasks", methods=["GET"])
+def get_recurring_tasks():
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM recurring_tasks WHERE client_id = ? ORDER BY recurrence_type, recurrence_day",
+            (client["id"],)
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/client/recurring-tasks", methods=["POST"])
+def create_recurring_task():
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True)
+    title = data.get("title", "").strip()
+    if not title:
+        return jsonify({"error": "title is required"}), 400
+    task_id = str(uuid.uuid4())[:12]
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO recurring_tasks (id, client_id, title, recurrence_type, recurrence_day,"
+            " notify_time, lineworks_room, enabled, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)",
+            (task_id, client["id"], title,
+             data.get("recurrence_type", "weekly"),
+             int(data.get("recurrence_day", 1)),
+             data.get("notify_time", "08:00"),
+             data.get("lineworks_room", ""),
+             now_iso())
+        )
+    return jsonify({"id": task_id, "title": title}), 201
+
+
+@app.route("/api/v1/client/recurring-tasks/<task_id>", methods=["PATCH"])
+def update_recurring_task(task_id):
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True)
+    allowed = {"title", "recurrence_type", "recurrence_day", "notify_time", "lineworks_room", "enabled"}
+    fields = {k: v for k, v in data.items() if k in allowed}
+    if not fields:
+        return jsonify({"error": "no updatable fields"}), 400
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    with get_db() as conn:
+        conn.execute(
+            f"UPDATE recurring_tasks SET {set_clause} WHERE id = ? AND client_id = ?",
+            (*fields.values(), task_id, client["id"])
+        )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/v1/client/recurring-tasks/<task_id>", methods=["DELETE"])
+def delete_recurring_task(task_id):
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM recurring_tasks WHERE id = ? AND client_id = ?",
+            (task_id, client["id"])
+        )
+    return jsonify({"ok": True})
+
+
+def _check_recurring_tasks():
+    """繰り返しタスクをチェックして通知する（ルーム単位にまとめる）"""
+    from datetime import date, datetime as _dt
+    from collections import defaultdict
+    today = date.today()
+    today_str = today.isoformat()
+    now_hour = _dt.now().hour
+    weekday = today.weekday()  # 0=月曜 … 6=日曜
+    month_day = today.day
+
+    with get_db() as conn:
+        tasks = conn.execute(
+            "SELECT rt.*, c.name as client_name FROM recurring_tasks rt"
+            " JOIN clients c ON rt.client_id = c.id"
+            " WHERE rt.enabled = 1"
+        ).fetchall()
+
+    groups = defaultdict(list)
+    for t in tasks:
+        try:
+            rt = t["recurrence_type"]
+            rd = t["recurrence_day"] or 1
+            if rt == "daily":
+                pass
+            elif rt == "weekly":
+                if weekday != rd:
+                    continue
+            elif rt == "monthly":
+                if month_day != rd:
+                    continue
+            else:
+                continue
+            last = t["last_notified"] or ""
+            if last and last[:10] == today_str:
+                continue
+            notify_h = int((t["notify_time"] or "08:00").split(":")[0])
+            if now_hour < notify_h:
+                continue
+            room = t["lineworks_room"] or ""
+            groups[(t["client_id"], room)].append(t)
+        except Exception as e:
+            print(f"[SCHEDULER] 繰り返しタスク処理エラー id={t['id']}: {e}")
+
+    for (client_id, room), items in groups.items():
+        try:
+            lines = [f"【定期タスク】本日の作業 {len(items)}件\n"]
+            task_ids = []
+            for t in items:
+                rt = t["recurrence_type"]
+                label = "毎日" if rt == "daily" else (
+                    ["月","火","水","木","金","土","日"][t["recurrence_day"]] + "曜" if rt == "weekly" else
+                    f"毎月{t['recurrence_day']}日"
+                )
+                lines.append(f"  ✅ {t['title']}（{label}）")
+                task_ids.append(t["id"])
+            lines.append("\n※ 完了後はELVIN MANAGERで確認してください")
+            message = "\n".join(lines)
+
+            task_id = str(uuid.uuid4())
+            payload = json.dumps({"message": message, "room_name": room}, ensure_ascii=False)
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT INTO tasks (id, client_id, type, payload, status, created_at)"
+                    " VALUES (?, ?, 'lineworks_send', ?, 'pending', ?)",
+                    (task_id, client_id, payload, now_iso())
+                )
+                for tid in task_ids:
+                    conn.execute(
+                        "UPDATE recurring_tasks SET last_notified = ? WHERE id = ?",
+                        (now_iso(), tid)
+                    )
+            print(f"[SCHEDULER] 定期タスク通知 {len(items)}件 → {room}")
+        except Exception as e:
+            print(f"[SCHEDULER] 定期タスクまとめエラー: {e}")
+
+
+# ── 原価・利益率 API (#21) ────────────────────────────────────────────────
+
+@app.route("/api/v1/client/project-costs", methods=["GET"])
+def get_project_costs():
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    project_name = request.args.get("project_name", "")
+    month = request.args.get("month", "")
+    with get_db() as conn:
+        if project_name:
+            rows = conn.execute(
+                "SELECT * FROM project_costs WHERE client_id = ? AND project_name = ? ORDER BY date DESC",
+                (client["id"], project_name)
+            ).fetchall()
+        elif month:
+            rows = conn.execute(
+                "SELECT * FROM project_costs WHERE client_id = ? AND date LIKE ? ORDER BY date DESC",
+                (client["id"], f"{month}%")
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM project_costs WHERE client_id = ? ORDER BY date DESC LIMIT 200",
+                (client["id"],)
+            ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/client/project-costs/summary", methods=["GET"])
+def get_project_costs_summary():
+    """案件ごとの原価・利益率サマリー"""
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    month = request.args.get("month", "")
+    with get_db() as conn:
+        if month:
+            costs = conn.execute(
+                "SELECT project_name, cost_type, SUM(amount) as total"
+                " FROM project_costs WHERE client_id = ? AND date LIKE ?"
+                " GROUP BY project_name, cost_type",
+                (client["id"], f"{month}%")
+            ).fetchall()
+        else:
+            costs = conn.execute(
+                "SELECT project_name, cost_type, SUM(amount) as total"
+                " FROM project_costs WHERE client_id = ?"
+                " GROUP BY project_name, cost_type",
+                (client["id"],)
+            ).fetchall()
+
+    summary = {}
+    for r in costs:
+        pn = r["project_name"]
+        if pn not in summary:
+            summary[pn] = {"project_name": pn, "labor": 0, "subcontract": 0, "material": 0, "other": 0}
+        ct = r["cost_type"]
+        if ct in summary[pn]:
+            summary[pn][ct] = r["total"] or 0
+
+    result = []
+    for pn, s in summary.items():
+        total_cost = s["labor"] + s["subcontract"] + s["material"] + s["other"]
+        s["total_cost"] = total_cost
+        result.append(s)
+
+    return jsonify(result)
+
+
+@app.route("/api/v1/client/project-costs", methods=["POST"])
+def create_project_cost():
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True)
+    project_name = data.get("project_name", "").strip()
+    cost_type = data.get("cost_type", "").strip()
+    amount = int(data.get("amount", 0))
+    date_str = data.get("date", "").strip()
+    if not project_name or not cost_type or not date_str:
+        return jsonify({"error": "project_name, cost_type, date are required"}), 400
+    cost_id = str(uuid.uuid4())[:12]
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO project_costs (id, client_id, project_name, cost_type, amount, memo, date, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (cost_id, client["id"], project_name, cost_type, amount,
+             data.get("memo", ""), date_str, now_iso())
+        )
+    return jsonify({"id": cost_id}), 201
+
+
+@app.route("/api/v1/client/project-costs/<cost_id>", methods=["DELETE"])
+def delete_project_cost(cost_id):
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM project_costs WHERE id = ? AND client_id = ?",
+            (cost_id, client["id"])
+        )
+    return jsonify({"ok": True})
+
+
+# ── 施工マニュアル API (C-17) ─────────────────────────────────────────────
+
+@app.route("/api/v1/client/manuals", methods=["GET"])
+def get_manuals():
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    q = request.args.get("q", "").strip()
+    category = request.args.get("category", "").strip()
+    with get_db() as conn:
+        if q and category:
+            rows = conn.execute(
+                "SELECT * FROM manuals WHERE client_id = ? AND category = ?"
+                " AND (title LIKE ? OR content LIKE ? OR tags LIKE ?)"
+                " ORDER BY updated_at DESC",
+                (client["id"], category, f"%{q}%", f"%{q}%", f"%{q}%")
+            ).fetchall()
+        elif q:
+            rows = conn.execute(
+                "SELECT * FROM manuals WHERE client_id = ?"
+                " AND (title LIKE ? OR content LIKE ? OR tags LIKE ?)"
+                " ORDER BY updated_at DESC",
+                (client["id"], f"%{q}%", f"%{q}%", f"%{q}%")
+            ).fetchall()
+        elif category:
+            rows = conn.execute(
+                "SELECT * FROM manuals WHERE client_id = ? AND category = ? ORDER BY updated_at DESC",
+                (client["id"], category)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM manuals WHERE client_id = ? ORDER BY updated_at DESC",
+                (client["id"],)
+            ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/client/manuals", methods=["POST"])
+def create_manual():
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True)
+    title = data.get("title", "").strip()
+    if not title:
+        return jsonify({"error": "title is required"}), 400
+    manual_id = str(uuid.uuid4())[:12]
+    ts = now_iso()
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO manuals (id, client_id, title, category, content, tags, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (manual_id, client["id"], title,
+             data.get("category", "工種"),
+             data.get("content", ""),
+             data.get("tags", ""),
+             ts, ts)
+        )
+    return jsonify({"id": manual_id, "title": title}), 201
+
+
+@app.route("/api/v1/client/manuals/<manual_id>", methods=["PATCH"])
+def update_manual(manual_id):
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True)
+    allowed = {"title", "category", "content", "tags"}
+    fields = {k: v for k, v in data.items() if k in allowed}
+    if not fields:
+        return jsonify({"error": "no updatable fields"}), 400
+    fields["updated_at"] = now_iso()
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    with get_db() as conn:
+        conn.execute(
+            f"UPDATE manuals SET {set_clause} WHERE id = ? AND client_id = ?",
+            (*fields.values(), manual_id, client["id"])
+        )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/v1/client/manuals/<manual_id>", methods=["DELETE"])
+def delete_manual(manual_id):
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM manuals WHERE id = ? AND client_id = ?",
+            (manual_id, client["id"])
+        )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/v1/client/manuals/generate", methods=["POST"])
+def generate_manual():
+    """AIによる施工マニュアル自動生成"""
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    try:
+        api_key = client["anthropic_api_key"] or ANTHROPIC_API_KEY
+    except Exception:
+        api_key = ANTHROPIC_API_KEY
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY not configured"}), 503
+    data = request.get_json(force=True)
+    topic = (data.get("topic") or "").strip()
+    category = (data.get("category") or "工種").strip()
+    if not topic:
+        return jsonify({"error": "topic is required"}), 400
+    try:
+        import anthropic as _ant
+        ant = _ant.Anthropic(api_key=api_key)
+        prompt = (
+            f"建設・内装工事の施工マニュアルを作成してください。\n"
+            f"テーマ: {topic}\nカテゴリ: {category}\n\n"
+            "以下の形式でマークダウンなし・番号付き手順で記載してください:\n"
+            "【概要】\n（作業の目的・適用範囲）\n\n"
+            "【必要資材・工具】\n（箇条書き）\n\n"
+            "【手順】\n1. …\n2. …\n\n"
+            "【注意事項】\n（安全・品質上の注意点）\n\n"
+            "【よくあるトラブルと対処】\n（Q&A形式）"
+        )
+        resp = ant.messages.create(
+            model=ANTHROPIC_MODEL, max_tokens=2000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        content = "".join(b.text for b in resp.content if b.type == "text")
+        return jsonify({"content": content, "title": topic, "category": category})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 def _alert_scheduler_loop():
     import time as _time
     from datetime import datetime as _dt
@@ -2878,6 +3300,7 @@ def _alert_scheduler_loop():
                 _check_construction_alerts()
                 _check_deadline_alerts()
                 _check_checklist_alerts()
+                _check_recurring_tasks()
         except Exception as e:
             print(f"[SCHEDULER] ループエラー: {e}")
         _time.sleep(3600)  # 1時間ごと
