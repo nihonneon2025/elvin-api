@@ -28,6 +28,18 @@ from flask import Flask, jsonify, request, send_file, send_from_directory
 
 app = Flask(__name__)
 
+@app.after_request
+def add_cors(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Daemon-Secret, X-Client-Token"
+    return response
+
+@app.route("/api/v1/<path:p>", methods=["OPTIONS"])
+@app.route("/api/<path:p>", methods=["OPTIONS"])
+def handle_preflight(p=""):
+    return "", 204
+
 DB_PATH = os.path.join(os.path.dirname(__file__), "tasks.db")
 DAEMON_SECRET = os.environ.get("DAEMON_SECRET", "changeme")
 PORT = int(os.environ.get("PORT", 5050))
