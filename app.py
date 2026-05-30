@@ -217,6 +217,15 @@ def init_db():
                 created_at        TEXT,
                 FOREIGN KEY (client_id) REFERENCES clients(id)
             );
+            CREATE TABLE IF NOT EXISTS project_routines (
+                id                TEXT PRIMARY KEY,
+                client_id         TEXT NOT NULL,
+                project_name      TEXT NOT NULL,
+                construction_date TEXT NOT NULL,
+                lineworks_room    TEXT DEFAULT '',
+                created_at        TEXT,
+                FOREIGN KEY (client_id) REFERENCES clients(id)
+            );
             CREATE TABLE IF NOT EXISTS checklist_alerts (
                 id                TEXT PRIMARY KEY,
                 client_id         TEXT NOT NULL,
@@ -242,6 +251,9 @@ def init_db():
             "ALTER TABLE tasks ADD COLUMN tokens_out INTEGER DEFAULT 0",
             "ALTER TABLE tasks ADD COLUMN model TEXT DEFAULT ''",
             "ALTER TABLE conversations ADD COLUMN requester_id TEXT",
+            "ALTER TABLE order_master ADD COLUMN unit_price INTEGER DEFAULT 0",
+            "ALTER TABLE construction_alerts ADD COLUMN order_amount INTEGER DEFAULT 0",
+            "ALTER TABLE construction_alerts ADD COLUMN delivered_at TEXT",
         ]:
             try:
                 conn.execute(sql)
@@ -2231,11 +2243,12 @@ def create_order_master():
     item_id = str(uuid.uuid4())[:12]
     with get_db() as conn:
         conn.execute(
-            "INSERT INTO order_master (id, client_id, name, category, lead_time_days, unit, memo, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO order_master (id, client_id, name, category, lead_time_days, unit, unit_price, memo, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (item_id, client["id"], name,
              data.get("category", ""), int(data.get("lead_time_days", 14)),
-             data.get("unit", ""), data.get("memo", ""), now_iso())
+             data.get("unit", ""), int(data.get("unit_price", 0)),
+             data.get("memo", ""), now_iso())
         )
     return jsonify({"id": item_id, "name": name}), 201
 
@@ -2246,7 +2259,7 @@ def update_order_master(item_id):
     if not client:
         return jsonify({"error": "unauthorized"}), 401
     data = request.get_json(force=True)
-    allowed = {"name", "category", "lead_time_days", "unit", "memo"}
+    allowed = {"name", "category", "lead_time_days", "unit", "unit_price", "memo"}
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return jsonify({"error": "no updatable fields"}), 400
@@ -2335,20 +2348,25 @@ def create_construction_alert():
     lead_time = int(data.get("lead_time_days", 14))
     item_id = data.get("order_item_id", "")
     item_name = data.get("order_item_name", "")
+    order_amount = int(data.get("order_amount", 0))
     if item_id and not item_name:
         with get_db() as conn:
             item = conn.execute("SELECT name FROM order_master WHERE id = ?", (item_id,)).fetchone()
             if item:
                 item_name = item["name"]
+                if not lead_time or lead_time == 14:
+                    lt_row = conn.execute("SELECT lead_time_days FROM order_master WHERE id = ?", (item_id,)).fetchone()
+                    if lt_row:
+                        lead_time = lt_row["lead_time_days"]
     with get_db() as conn:
         conn.execute(
             "INSERT INTO construction_alerts"
             " (id, client_id, project_name, construction_date, order_item_id,"
-            "  order_item_name, lead_time_days, lineworks_room, status, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+            "  order_item_name, lead_time_days, lineworks_room, order_amount, status, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
             (alert_id, client["id"], project_name, construction_date,
              item_id, item_name, lead_time,
-             data.get("lineworks_room", ""), now_iso())
+             data.get("lineworks_room", ""), order_amount, now_iso())
         )
     return jsonify({"id": alert_id, "project_name": project_name}), 201
 
@@ -2360,7 +2378,7 @@ def update_construction_alert(alert_id):
         return jsonify({"error": "unauthorized"}), 401
     data = request.get_json(force=True)
     allowed = {"project_name", "construction_date", "order_item_name",
-               "lead_time_days", "lineworks_room", "status"}
+               "lead_time_days", "lineworks_room", "status", "order_amount", "delivered_at"}
     fields = {k: v for k, v in data.items() if k in allowed}
     if not fields:
         return jsonify({"error": "no updatable fields"}), 400
@@ -2532,6 +2550,69 @@ def delete_checklist_alert(alert_id):
 
 
 # ── 発注アラートスケジューラ ────────────────────────────────────────────
+
+# ── 案件ルーティンテンプレート (C-18) ────────────────────────────────────
+
+_ROUTINE_STEPS = [
+    ("現調",               -60, "案件ルーティン"),
+    ("現調内容共有",        -55, "案件ルーティン"),
+    ("現調資料まとめ",      -50, "案件ルーティン"),
+    ("図面・施工指示書作成",-45, "案件ルーティン"),
+    ("見積・積算",          -40, "案件ルーティン"),
+    ("契約",               -35, "案件ルーティン"),
+    ("発注・申請",          -30, "案件ルーティン"),
+    ("下請・職人手配",      -21, "案件ルーティン"),
+    ("施工内容打合",        -14, "案件ルーティン"),
+    ("着工",                 0,  "案件ルーティン"),
+    ("監督情報共有",          3, "案件ルーティン"),
+    ("現場調整協議",          7, "案件ルーティン"),
+    ("完了",                14, "案件ルーティン"),
+    ("監督検査",             21, "案件ルーティン"),
+    ("施主検査",             28, "案件ルーティン"),
+    ("竣工",                35, "案件ルーティン"),
+    ("請求・入金確認",       42, "案件ルーティン"),
+]
+
+
+@app.route("/api/v1/client/project-routines/apply", methods=["POST"])
+def apply_project_routine():
+    client = _auth_client_for_alerts()
+    if not client:
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.get_json(force=True)
+    project_name = data.get("project_name", "").strip()
+    construction_date = data.get("construction_date", "").strip()
+    lineworks_room = data.get("lineworks_room", "").strip()
+    alert_days_before = int(data.get("alert_days_before", 3))
+    if not project_name or not construction_date or not lineworks_room:
+        return jsonify({"error": "project_name, construction_date, lineworks_room are required"}), 400
+    from datetime import date as _date, timedelta
+    try:
+        base = _date.fromisoformat(construction_date)
+    except ValueError:
+        return jsonify({"error": "invalid construction_date"}), 400
+    routine_id = str(uuid.uuid4())[:12]
+    created = []
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO project_routines (id, client_id, project_name, construction_date, lineworks_room, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (routine_id, client["id"], project_name, construction_date, lineworks_room, now_iso())
+        )
+        for step_name, offset_days, category in _ROUTINE_STEPS:
+            step_date = (base + timedelta(days=offset_days)).isoformat()
+            step_id = str(uuid.uuid4())[:12]
+            conn.execute(
+                "INSERT INTO deadline_alerts"
+                " (id, client_id, project_name, category, deadline, alert_days_before,"
+                "  lineworks_room, status, memo, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+                (step_id, client["id"], project_name, step_name, step_date,
+                 alert_days_before, lineworks_room, "", now_iso())
+            )
+            created.append({"step": step_name, "deadline": step_date})
+    return jsonify({"routine_id": routine_id, "steps_created": len(created), "steps": created}), 201
+
 
 def _check_construction_alerts():
     """発注期限が到来した着工アラートをチェックして lineworks_send タスクを作成する"""
