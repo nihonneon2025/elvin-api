@@ -2739,7 +2739,7 @@ def apply_project_routine():
 
 def _check_construction_alerts():
     """発注期限が到来した着工アラートをルーム単位で束ねて1通送信する"""
-    from datetime import datetime as _dt, timezone as _tz, timedelta
+    from datetime import datetime as _dt, timezone as _tz, timedelta, date
     from collections import defaultdict
     today = _dt.now(_tz(timedelta(hours=9))).date()
     today_str = today.isoformat()
@@ -2811,7 +2811,7 @@ def _check_construction_alerts():
 
 def _check_deadline_alerts():
     """期限アラートをルーム単位で束ねて1通送信する"""
-    from datetime import datetime as _dt, timezone as _tz, timedelta
+    from datetime import datetime as _dt, timezone as _tz, timedelta, date
     from collections import defaultdict
     today = _dt.now(_tz(timedelta(hours=9))).date()
     today_str = today.isoformat()
@@ -2885,7 +2885,7 @@ def _check_deadline_alerts():
 
 def _check_checklist_alerts():
     """着工7日前チェックリストをルーム単位で束ねて1通送信する"""
-    from datetime import datetime as _dt, timezone as _tz, timedelta
+    from datetime import datetime as _dt, timezone as _tz, timedelta, date
     from collections import defaultdict
     today = _dt.now(_tz(timedelta(hours=9))).date()
     today_str = today.isoformat()
