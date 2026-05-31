@@ -289,6 +289,7 @@ def init_db():
             "ALTER TABLE order_master ADD COLUMN unit_price INTEGER DEFAULT 0",
             "ALTER TABLE construction_alerts ADD COLUMN order_amount INTEGER DEFAULT 0",
             "ALTER TABLE construction_alerts ADD COLUMN delivered_at TEXT",
+            "ALTER TABLE agents ADD COLUMN vps_loop INTEGER DEFAULT 0",
         ]:
             try:
                 conn.execute(sql)
@@ -1310,59 +1311,84 @@ def line_webhook_client(client_token):
             agent = None
             if group_id:
                 agent = conn.execute(
-                    "SELECT id, client_id FROM agents"
+                    "SELECT id, client_id, vps_loop FROM agents"
                     " WHERE client_id = ? AND line_group_id = ? AND enabled = 1",
                     (client["id"], group_id),
                 ).fetchone()
             if not agent:
                 agent = conn.execute(
-                    "SELECT id, client_id FROM agents"
+                    "SELECT id, client_id, vps_loop FROM agents"
                     " WHERE client_id = ? AND enabled = 1 ORDER BY created_at ASC LIMIT 1",
                     (client["id"],),
                 ).fetchone()
             if agent:
-                # 直近完了タスクをコンテキストとして注入（全エージェントから最新を取得）
-                recent = conn.execute(
-                    "SELECT result FROM tasks"
-                    " WHERE client_id=? AND status='completed'"
-                    " ORDER BY completed_at DESC LIMIT 1",
-                    (client["id"],),
-                ).fetchone()
-                context_str = ""
-                if recent and recent["result"]:
-                    try:
-                        recent_output = json.loads(recent["result"]).get("output", "")
-                        if recent_output:
-                            context_str = recent_output[:300]
-                    except Exception:
-                        pass
+                print(f"[WEBHOOK] group={group_id or 'dm'} user={line_user_id[:8] if line_user_id else '-'} vps_loop={agent['vps_loop'] or 0} text={text[:60]}")
 
-                # 曖昧指示（PDFにして/送って等）+ recent_contextにFILEパスがある場合、
-                # VPS側でテキストを事前展開してURVANに明確な指示を渡す
-                _ctx_file = re.search(r'\[FILE:([^\]]+)\]', context_str) if context_str else None
-                if _ctx_file and text:
-                    _fp = _ctx_file.group(1).strip()
-                    if re.search(r'PDF|ＰＤＦ', text, re.IGNORECASE):
-                        text = f"{_fp} をPDFに変換してAI事業グループに送って"
-                    elif any(kw in text for kw in ["送って", "転送", "これ", "さっきの", "それ"]):
-                        text = f"{_fp} をAI事業グループに送って"
+                if agent["vps_loop"]:
+                    # ── 設計C VPS頭脳ループ（Step 3以降） ──────────────────
+                    _snap_text      = text
+                    _snap_agent_id  = agent["id"]
+                    _snap_client_id = client["id"]
+                    _snap_user_id   = line_user_id or ""
+                    _snap_req_name  = requester_name or ""
+                    _snap_reply_tk  = reply_token
 
-                payload_dict = {"text": text, "reply_token": reply_token, "group_id": group_id}
-                if requester_name:
-                    payload_dict["requester_name"] = requester_name
-                if context_str:
-                    payload_dict["recent_context"] = context_str
+                    def _run_vps_loop():
+                        result = _vps_full_loop(
+                            message=_snap_text,
+                            client_id=_snap_client_id,
+                            agent_id=_snap_agent_id,
+                            requester_id=_snap_user_id,
+                            requester_name=_snap_req_name,
+                        )
+                        out = result.get("output", "")
+                        if out and not result.get("dispatched"):
+                            line_reply(_snap_reply_tk, out)
+                        print(f"[VPS_LOOP] done dispatched={result.get('dispatched')} tokens={result.get('tokens_in',0)}+{result.get('tokens_out',0)}")
 
-                task_id = str(uuid.uuid4())
-                conn.execute(
-                    "INSERT INTO tasks (id, client_id, agent_id, type, payload, status, created_at)"
-                    " VALUES (?, ?, ?, ?, ?, 'pending', ?)",
-                    (
-                        task_id, client["id"], agent["id"], "line_message",
-                        json.dumps(payload_dict, ensure_ascii=False),
-                        now_iso(),
-                    ),
-                )
+                    threading.Thread(target=_run_vps_loop, daemon=True).start()
+
+                else:
+                    # ── 既存: daemon タスクキュー ───────────────────────────
+                    recent = conn.execute(
+                        "SELECT result FROM tasks"
+                        " WHERE client_id=? AND status='completed'"
+                        " ORDER BY completed_at DESC LIMIT 1",
+                        (client["id"],),
+                    ).fetchone()
+                    context_str = ""
+                    if recent and recent["result"]:
+                        try:
+                            recent_output = json.loads(recent["result"]).get("output", "")
+                            if recent_output:
+                                context_str = recent_output[:300]
+                        except Exception:
+                            pass
+
+                    _ctx_file = re.search(r'\[FILE:([^\]]+)\]', context_str) if context_str else None
+                    if _ctx_file and text:
+                        _fp = _ctx_file.group(1).strip()
+                        if re.search(r'PDF|ＰＤＦ', text, re.IGNORECASE):
+                            text = f"{_fp} をPDFに変換してAI事業グループに送って"
+                        elif any(kw in text for kw in ["送って", "転送", "これ", "さっきの", "それ"]):
+                            text = f"{_fp} をAI事業グループに送って"
+
+                    payload_dict = {"text": text, "reply_token": reply_token, "group_id": group_id}
+                    if requester_name:
+                        payload_dict["requester_name"] = requester_name
+                    if context_str:
+                        payload_dict["recent_context"] = context_str
+
+                    task_id = str(uuid.uuid4())
+                    conn.execute(
+                        "INSERT INTO tasks (id, client_id, agent_id, type, payload, status, created_at)"
+                        " VALUES (?, ?, ?, ?, ?, 'pending', ?)",
+                        (
+                            task_id, client["id"], agent["id"], "line_message",
+                            json.dumps(payload_dict, ensure_ascii=False),
+                            now_iso(),
+                        ),
+                    )
     return jsonify({"ok": True})
 
 
