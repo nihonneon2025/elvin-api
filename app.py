@@ -1780,6 +1780,178 @@ def _vps_process_chat(task_id: str, client_id: str, agent_id: str | None,
             )
 
 
+# ── 設計C VPS頭脳ループ ───────────────────────────────────────────────────
+
+def _vps_full_loop(message: str, client_id: str, agent_id: str,
+                   requester_id: str = None, requester_name: str = None,
+                   room_name: str = None) -> dict:
+    """設計C VPS頭脳ループ。Anthropic SDK直接呼び出し + DISPATCH判断。
+    DISPATCH:指示内容 → daemon(ELVIN_task)に委託
+    それ以外 → テキスト直接返答
+    """
+    if not ANTHROPIC_API_KEY:
+        return {"output": "ANTHROPIC_API_KEY未設定", "dispatched": False}
+
+    try:
+        import anthropic as _ant
+
+        with get_db() as conn:
+            client_row = conn.execute(
+                "SELECT anthropic_api_key, anthropic_model FROM clients WHERE id = ?", (client_id,)
+            ).fetchone()
+            agent_row = conn.execute(
+                "SELECT name, role, system_prompt FROM agents WHERE id = ? AND enabled = 1", (agent_id,)
+            ).fetchone()
+
+        if not agent_row:
+            return {"output": "エージェントが見つかりません", "dispatched": False}
+
+        api_key = (client_row["anthropic_api_key"] if client_row else "") or ANTHROPIC_API_KEY
+        model   = (client_row["anthropic_model"]   if client_row else "") or ANTHROPIC_MODEL
+
+        memories_text = load_memories(client_id)
+        history = load_conversation_history(client_id, agent_id, limit=20, requester_id=requester_id)
+
+        base_system = agent_row["system_prompt"] or "あなたはELVIN、業務アシスタントAIです。日本語で回答してください。"
+        dispatch_note = (
+            "\n\n【DISPATCHルール（VPS頭脳モード）】\n"
+            "以下が必要な場合は 'DISPATCH:<指示内容>' の1行のみ出力すること:\n"
+            "・顧客PCのローカルファイル操作（作成・編集・読み取り）\n"
+            "・PowerShell/Bashコマンド実行\n"
+            "・スクリーンショット取得\n"
+            "・LINE WORKSへのファイル添付送信\n"
+            "・ローカルWebブラウザ操作\n"
+            "上記以外（質問・情報提供・計算・要約・テキスト生成等）は通常の日本語テキストで返答すること。"
+        )
+        full_system = base_system + dispatch_note
+        if memories_text:
+            full_system += "\n\n## 記憶\n" + memories_text
+
+        messages = history + [{"role": "user", "content": message}]
+
+        ant = _ant.Anthropic(api_key=api_key)
+        resp = ant.messages.create(
+            model=model, max_tokens=4096,
+            system=full_system, messages=messages,
+            tools=[_MEMORY_TOOL],
+        )
+
+        output_parts = []
+        for block in resp.content:
+            if block.type == "tool_use" and block.name == "save_memory":
+                inp = block.input
+                upsert_memory(client_id, inp.get("category", "general"),
+                              inp.get("key", ""), inp.get("value", ""))
+            elif block.type == "text":
+                output_parts.append(block.text)
+
+        tokens_in  = resp.usage.input_tokens
+        tokens_out = resp.usage.output_tokens
+
+        if resp.stop_reason == "tool_use":
+            cont_msgs = messages + [
+                {"role": "assistant", "content": resp.content},
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": b.id, "content": "保存しました"}
+                    for b in resp.content if b.type == "tool_use"
+                ]},
+            ]
+            resp2 = ant.messages.create(
+                model=model, max_tokens=2048,
+                system=full_system, messages=cont_msgs,
+            )
+            for block in resp2.content:
+                if block.type == "text":
+                    output_parts.append(block.text)
+            tokens_in  += resp2.usage.input_tokens
+            tokens_out += resp2.usage.output_tokens
+
+        output = "\n".join(output_parts).strip()
+
+        dispatched = False
+        dispatch_task_id = None
+        if output.startswith("DISPATCH:"):
+            task_content = output[9:].strip()
+            dispatch_task_id = str(uuid.uuid4())
+            prompt_for_daemon = (
+                f"返信先LINE WORKSルーム名: {room_name}\n\n{task_content}"
+                if room_name else task_content
+            )
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT INTO tasks (id, client_id, agent_id, type, payload, status, created_at)"
+                    " VALUES (?, ?, ?, 'ELVIN_task', ?, 'pending', ?)",
+                    (dispatch_task_id, client_id, agent_id,
+                     json.dumps({"prompt": prompt_for_daemon,
+                                 "requester_id": requester_id or "",
+                                 "requester_name": requester_name or ""},
+                                ensure_ascii=False),
+                     now_iso()),
+                )
+            print(f"[FULL_LOOP] DISPATCH → daemon task={dispatch_task_id[:8]}")
+            output = "（ウルバンに委託しました。LINE WORKSに結果が届きます）"
+            dispatched = True
+
+        if not dispatched:
+            save_conversation(client_id, agent_id, "user",      message, requester_id=requester_id)
+            save_conversation(client_id, agent_id, "assistant", output,  requester_id=requester_id)
+
+        return {
+            "output":           output,
+            "dispatched":       dispatched,
+            "dispatch_task_id": dispatch_task_id,
+            "tokens_in":        tokens_in,
+            "tokens_out":       tokens_out,
+            "model":            model,
+        }
+
+    except Exception as e:
+        print(f"[FULL_LOOP] エラー: {e}")
+        return {"output": f"エラー: {str(e)[:200]}", "dispatched": False, "error": str(e)}
+
+
+@app.route("/api/v1/ai/agent", methods=["POST"])
+def ai_agent_loop():
+    """設計C VPS頭脳ループ - Step 2テスト用エンドポイント。
+    MANAGER chat または CLI から呼び出して DISPATCH 動作を確認する。
+    """
+    token = client_token_from_request()
+    client = get_client_by_token(token) if token else None
+    if not client:
+        return jsonify({"error": "invalid token"}), 401
+
+    if (client["status"] or "active") == "suspended":
+        return jsonify({"error": "suspended"}), 403
+
+    data       = request.get_json(force=True)
+    message    = (data.get("message") or "").strip()
+    agent_id   = data.get("agent_id")
+    req_id     = data.get("requester_id", "")
+    req_name   = data.get("requester_name", "")
+    room_name  = data.get("room_name", "")
+
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+
+    if not agent_id:
+        with get_db() as conn:
+            ag = conn.execute(
+                "SELECT id FROM agents WHERE client_id = ? AND enabled = 1 ORDER BY created_at ASC LIMIT 1",
+                (client["id"],),
+            ).fetchone()
+            if ag:
+                agent_id = ag["id"]
+
+    if not agent_id:
+        return jsonify({"error": "no agent found"}), 404
+
+    result = _vps_full_loop(
+        message=message, client_id=client["id"], agent_id=agent_id,
+        requester_id=req_id, requester_name=req_name, room_name=room_name,
+    )
+    return jsonify(result)
+
+
 @app.route("/api/v1/chat/agents", methods=["GET"])
 def chat_list_agents():
     """ELVIN CHATからのエージェント一覧取得。client_tokenで認証。"""
