@@ -1870,8 +1870,9 @@ def _vps_full_loop(message: str, client_id: str, agent_id: str,
 
         dispatched = False
         dispatch_task_id = None
-        if output.startswith("DISPATCH:"):
-            task_content = output[9:].strip()
+        _dispatch_match = re.search(r'DISPATCH:(.+)', output, re.IGNORECASE)
+        if _dispatch_match:
+            task_content = _dispatch_match.group(1).strip()
             dispatch_task_id = str(uuid.uuid4())
             prompt_for_daemon = (
                 f"返信先LINE WORKSルーム名: {room_name}\n\n{task_content}"
