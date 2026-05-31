@@ -2019,18 +2019,26 @@ def ai_run():
 
     data = request.get_json(force=True)
     prompt = (data.get("prompt") or "").strip()
+    messages = data.get("messages")  # 会話履歴配列（line-handler等から渡される）
     system = (data.get("system") or "").strip()
     model = data.get("model") or ANTHROPIC_MODEL
-    if not prompt:
-        return jsonify({"error": "prompt is required"}), 400
+    max_tokens = int(data.get("max_tokens") or 4096)
+
+    # messages配列が渡された場合はそのまま使用、なければpromptから生成
+    if messages and isinstance(messages, list):
+        api_messages = messages
+    elif prompt:
+        api_messages = [{"role": "user", "content": prompt}]
+    else:
+        return jsonify({"error": "prompt or messages is required"}), 400
 
     try:
         import anthropic as _ant
         ant = _ant.Anthropic(api_key=api_key)
         kwargs = {
             "model": model,
-            "max_tokens": 4096,
-            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "messages": api_messages,
         }
         if system:
             kwargs["system"] = system
