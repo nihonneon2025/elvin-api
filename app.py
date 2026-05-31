@@ -706,7 +706,7 @@ def get_agent(agent_id):
 def update_agent(agent_id):
     data = request.get_json(force=True)
     fields = {k: v for k, v in data.items()
-              if k in ("name", "role", "line_group_id", "system_prompt", "enabled")}
+              if k in ("name", "role", "line_group_id", "system_prompt", "enabled", "vps_loop")}
     if not fields:
         return jsonify({"error": "no updatable fields"}), 400
     set_clause = ", ".join(f"{k} = ?" for k in fields)
